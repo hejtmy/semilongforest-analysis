@@ -1,0 +1,304 @@
+---
+title: "Analysis"
+subtitle: "Does the benefit of VR forest immersion persist across repeated sessions?"
+---
+
+```{r}
+#| label: setup
+source("site/_setup.R")
+```
+
+## Question and strategy
+
+Participants did five 10-minute VR-forest sessions. We collected:
+
+- **ROS** (Restoration Outcome Scale) and **POMS-SF** (6 subscales + total mood disturbance) — **pre and post** each session
+- **VRSQ** (Virtual Reality Sickness Questionnaire; oculomotor and disorientation subscales) — **post** each session
+
+Our main interest is **how the within-session benefit evolves across sessions 1 → 5**. Does the effect of immersion persist, grow, or fade with repeated exposure? And is the size of the benefit on a given session shrunk when the same participant reports more VR sickness that day?
+
+**Primary outcome per session**: Δ = post − pre (ROS; each POMS subscale; POMS TMD).
+
+**Three families of mixed-effects models** (`lmerTest::lmer`):
+
+1. **Trajectory** — `Δ ~ session + (1 + session | participant)`. The fixed slope on `session` is the headline answer. Random slopes let participants adapt at different rates.
+2. **Pre × session interaction** — `score ~ timepoint * session + (1 + timepoint | participant)`. The `timepoint:session` term is the same "benefit evolution" test in the raw (pre, post) space, which some reviewers prefer.
+3. **VRSQ moderation** — `Δ ~ session * vrsq_wc + vrsq_pm + (1 + session | participant)`. We split VRSQ into a **within-person** component (`_wc`, deviation from the participant's own mean) and a **between-person** component (`_pm`, participant's average). The within-person slope answers: *on your sicker-than-usual sessions, do you get less benefit?* — which is the moderation question a between-person correlation would conflate.
+
+All effect sizes reported with 95% CIs. n = `r length(unique(df_analysis$participant))` participants ⇒ small sample; we prefer CIs over p-values and fall back to random-intercept-only models when a random-slope model is singular.
+
+:::{.callout-note}
+### Direction of "improvement"
+To make cross-outcome plots comparable, we define **improvement** as Δ signed so that *positive = better*: ROS and vitality use +Δ; anger, tension, fatigue, depression, confusion and TMD use −Δ. Model tables below use the **raw Δ** (not re-signed) so coefficients correspond to the scales as scored. The interpretation of a negative slope therefore differs by outcome — see each table's footnote.
+:::
+
+## Data available for analysis
+
+```{r}
+#| label: coverage
+coverage <- df_analysis %>%
+  distinct(participant, session_order, outcome) %>%
+  count(outcome, session_order, name = "n") %>%
+  tidyr::pivot_wider(names_from = session_order, values_from = n,
+                     names_prefix = "S", values_fill = 0L)
+
+coverage %>%
+  rename(Outcome = outcome) %>%
+  knitr::kable(caption = "Number of participants with complete pre+post data, by outcome × session.")
+```
+
+## Descriptives: benefit trajectories
+
+Each line is one participant's Δ across the five sessions; the heavy black line is the cross-participant mean at each session. A flat black line suggests the benefit is stable; a downward slope suggests fading.
+
+```{r}
+#| label: delta-by-session
+#| fig-height: 7.5
+df_analysis %>%
+  ggplot(aes(x = session_order, y = delta,
+             color = participant, group = participant)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_line(alpha = 0.35) +
+  geom_point(size = 1.4, alpha = 0.75) +
+  stat_summary(aes(group = 1), fun = mean, geom = "line",
+               color = "black", linewidth = 1.1) +
+  stat_summary(aes(group = 1), fun = mean, geom = "point",
+               color = "black", size = 2.5) +
+  facet_wrap(~ outcome, scales = "free_y",
+             labeller = labeller(outcome = outcome_labels)) +
+  scale_x_continuous(breaks = 1:5) +
+  labs(x = "Session", y = "Δ (post − pre, raw scale)",
+       caption = "Black = cross-participant mean. Positive Δ ≠ 'better' for all outcomes — see note above.") +
+  theme(legend.position = "none")
+```
+
+```{r}
+#| label: delta-summary
+df_analysis %>%
+  group_by(outcome, session_order) %>%
+  summarise(
+    n = n(),
+    mean_delta = mean(delta),
+    sd_delta = sd(delta),
+    .groups = "drop"
+  ) %>%
+  mutate(`Δ mean (SD)` = sprintf("%.2f (%.2f)", mean_delta, sd_delta)) %>%
+  select(outcome, session_order, n, `Δ mean (SD)`) %>%
+  tidyr::pivot_wider(names_from = session_order, values_from = `Δ mean (SD)`,
+                     names_prefix = "S") %>%
+  select(-n) %>%
+  rename(Outcome = outcome) %>%
+  knitr::kable(caption = "Within-session change (Δ) by session, mean (SD).")
+```
+
+## Model 1 — Trajectory of the benefit
+
+`Δ ~ session + (1 + session | participant)`, fit per outcome. The `session` fixed-effect slope is the **change in Δ per additional session**. We report it with a 95% Wald CI. Positive values = benefit is growing across sessions; negative = fading; near-zero = stable. Interpret the sign relative to the outcome's direction (see footnote).
+
+```{r}
+#| label: model1-trajectory
+#| warning: false
+fit_trajectory <- function(data) {
+  m <- tryCatch(
+    lmerTest::lmer(delta ~ session_order + (1 + session_order | participant),
+                   data = data, REML = TRUE),
+    error = function(e) NULL
+  )
+  if (is.null(m) || isSingular(m)) {
+    m <- lmerTest::lmer(delta ~ session_order + (1 | participant),
+                        data = data, REML = TRUE)
+    attr(m, "ranef_struct") <- "intercept-only (slope singular)"
+  } else {
+    attr(m, "ranef_struct") <- "intercept + slope"
+  }
+  m
+}
+
+trajectory_results <- df_analysis %>%
+  split(.$outcome) %>%
+  purrr::imap_dfr(function(d, nm) {
+    m <- fit_trajectory(d)
+    coefs <- broom.mixed::tidy(m, effects = "fixed", conf.int = TRUE,
+                               conf.method = "Wald")
+    coefs %>%
+      filter(term == "session_order") %>%
+      transmute(
+        Outcome = nm,
+        `Slope (Δ per session)` = sprintf("%+.2f", estimate),
+        `95% CI` = sprintf("[%+.2f, %+.2f]", conf.low, conf.high),
+        `p` = sprintf("%.3f", p.value),
+        `Random effects` = attr(m, "ranef_struct")
+      )
+  })
+
+trajectory_results %>%
+  knitr::kable(caption = "Slope of Δ across sessions (1 → 5). Signs are on the raw scale: for negative-affect scales (anger, tension, fatigue, depression, confusion, TMD) a negative slope means the benefit is growing; for ROS and vitality a positive slope means the benefit is growing.")
+```
+
+```{r}
+#| label: model1-plot
+#| fig-height: 6.5
+# Predicted trajectory per outcome
+pred_trajectory <- df_analysis %>%
+  split(.$outcome) %>%
+  purrr::imap_dfr(function(d, nm) {
+    m <- fit_trajectory(d)
+    p <- ggeffects::ggpredict(m, terms = "session_order [1:5]")
+    tibble::as_tibble(p) %>%
+      mutate(outcome = nm)
+  }) %>%
+  mutate(outcome = factor(outcome, levels = outcome_levels))
+
+ggplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_jitter(data = df_analysis,
+              aes(x = session_order, y = delta),
+              width = 0.1, alpha = 0.3, size = 1.2) +
+  geom_ribbon(data = pred_trajectory,
+              aes(x = x, ymin = conf.low, ymax = conf.high),
+              alpha = 0.2, fill = "#1f78b4") +
+  geom_line(data = pred_trajectory,
+            aes(x = x, y = predicted),
+            color = "#1f78b4", linewidth = 1) +
+  facet_wrap(~ outcome, scales = "free_y",
+             labeller = labeller(outcome = outcome_labels)) +
+  scale_x_continuous(breaks = 1:5) +
+  labs(x = "Session", y = "Δ (post − pre)",
+       caption = "Line = model-predicted Δ; ribbon = 95% CI; dots = observed Δ.")
+```
+
+## Model 2 — Pre × Session interaction
+
+Same question, different parameterisation. We fit `score ~ timepoint * session + (1 + timepoint | participant)` on the long (pre, post) data, per outcome. The key term is **`timepointpost : session_order`** — it tests whether the gap between pre and post widens or shrinks across sessions.
+
+```{r}
+#| label: model2-interaction
+#| warning: false
+long_by_outcome <- bind_rows(
+  df_ros %>% mutate(outcome = "ROS") %>% rename(score = ros_score),
+  df_poms %>% rename(outcome = scale)
+) %>%
+  mutate(outcome = factor(outcome, levels = outcome_levels),
+         timepoint = factor(timepoint, levels = c("pre", "post")))
+
+fit_interaction <- function(data) {
+  m <- tryCatch(
+    lmerTest::lmer(score ~ timepoint * session_order +
+                     (1 + timepoint | participant),
+                   data = data, REML = TRUE),
+    error = function(e) NULL
+  )
+  if (is.null(m) || isSingular(m)) {
+    m <- lmerTest::lmer(score ~ timepoint * session_order + (1 | participant),
+                        data = data, REML = TRUE)
+  }
+  m
+}
+
+interaction_results <- long_by_outcome %>%
+  split(.$outcome) %>%
+  purrr::imap_dfr(function(d, nm) {
+    m <- fit_interaction(d)
+    coefs <- broom.mixed::tidy(m, effects = "fixed", conf.int = TRUE,
+                               conf.method = "Wald")
+    coefs %>%
+      filter(term == "timepointpost:session_order") %>%
+      transmute(
+        Outcome = nm,
+        `timepoint:session` = sprintf("%+.2f", estimate),
+        `95% CI` = sprintf("[%+.2f, %+.2f]", conf.low, conf.high),
+        `p` = sprintf("%.3f", p.value)
+      )
+  })
+
+interaction_results %>%
+  knitr::kable(caption = "Pre-vs-post gap change per additional session. Same sign convention as Model 1.")
+```
+
+## Model 3 — VRSQ as a moderator
+
+Does a session with more VR-sickness erase the benefit that session? We use the **within-person** VRSQ deviation (`vrsq_*_wc`: how much sicker or less sick than *your own average* you were that session) as the moderator, with the **between-person** average (`vrsq_*_pm`) included as a nuisance control so we don't conflate the two.
+
+Primary moderator: **VRSQ total**. We fit `Δ ~ session * vrsq_total_wc + vrsq_total_pm + (1 + session | participant)`, per outcome. The key term is **`session : vrsq_total_wc`** (does sickness-related shrinkage of benefit itself change across sessions?); we also report the main effect of `vrsq_total_wc` (average shrinkage per VRSQ point, pooled across sessions).
+
+```{r}
+#| label: model3-moderation
+#| warning: false
+fit_moderation <- function(data, wc, pm) {
+  f_full <- as.formula(sprintf(
+    "delta ~ session_order * %s + %s + (1 + session_order | participant)",
+    wc, pm))
+  f_fallback <- as.formula(sprintf(
+    "delta ~ session_order * %s + %s + (1 | participant)",
+    wc, pm))
+  m <- tryCatch(lmerTest::lmer(f_full, data = data, REML = TRUE),
+                error = function(e) NULL)
+  if (is.null(m) || isSingular(m)) {
+    m <- lmerTest::lmer(f_fallback, data = data, REML = TRUE)
+  }
+  m
+}
+
+extract_moderation <- function(data, wc, pm, label) {
+  data %>%
+    split(.$outcome) %>%
+    purrr::imap_dfr(function(d, nm) {
+      m <- fit_moderation(d, wc, pm)
+      coefs <- broom.mixed::tidy(m, effects = "fixed", conf.int = TRUE,
+                                 conf.method = "Wald")
+      wc_term <- wc
+      inter_term <- paste0("session_order:", wc)
+      rows <- coefs %>% filter(term %in% c(wc_term, inter_term))
+      tibble::tibble(
+        Outcome = nm,
+        Moderator = label,
+        Term = ifelse(rows$term == wc_term,
+                      "within-person VRSQ",
+                      "session × within-person VRSQ"),
+        Estimate = sprintf("%+.3f", rows$estimate),
+        `95% CI` = sprintf("[%+.3f, %+.3f]", rows$conf.low, rows$conf.high),
+        `p` = sprintf("%.3f", rows$p.value)
+      )
+    })
+}
+
+moderation_total <- extract_moderation(
+  df_analysis, "vrsq_total_wc", "vrsq_total_pm", "VRSQ total")
+moderation_oculo <- extract_moderation(
+  df_analysis, "vrsq_oculo_wc", "vrsq_oculo_pm", "VRSQ oculomotor")
+moderation_disor <- extract_moderation(
+  df_analysis, "vrsq_disor_wc", "vrsq_disor_pm", "VRSQ disorientation")
+
+bind_rows(moderation_total, moderation_oculo, moderation_disor) %>%
+  knitr::kable(caption = "VRSQ moderation of within-session benefit. Within-person VRSQ = deviation from participant's own mean. A non-zero within-person term means that on your sicker-than-usual sessions, your benefit is different from your typical benefit.")
+```
+
+### Visualising the primary moderation
+
+For each outcome we plot Δ against the within-person VRSQ total, with a linear fit pooled across sessions. A downward slope in the positive-direction outcomes (ROS, vitality) or an upward slope in negative-direction outcomes would indicate that VR-sickness attenuates the benefit.
+
+```{r}
+#| label: moderation-plot
+#| fig-height: 7.5
+df_analysis %>%
+  ggplot(aes(x = vrsq_total_wc, y = delta)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_vline(xintercept = 0, linetype = "dotted", color = "grey60") +
+  geom_point(aes(color = factor(session_order)), alpha = 0.75, size = 1.8) +
+  geom_smooth(method = "lm", se = TRUE,
+              color = "black", linewidth = 0.8, alpha = 0.15) +
+  facet_wrap(~ outcome, scales = "free_y",
+             labeller = labeller(outcome = outcome_labels)) +
+  scale_color_brewer(palette = "YlOrRd", name = "Session") +
+  labs(x = "VRSQ total — within-person deviation (from participant mean)",
+       y = "Δ (post − pre)",
+       caption = "Dashed = no change; dotted = participant's own VRSQ mean. Line = pooled linear fit.")
+```
+
+## Interpretation checklist
+
+When reading the tables above:
+
+- **Stability of benefit** (Models 1 & 2): if the `session` slope / `timepoint:session` term has a CI that comfortably straddles zero, the benefit is *not detectably changing* across the 5 sessions — i.e. immersion is still working by session 5. If the CI is on the "fading" side of zero, that's evidence of habituation.
+- **Moderation** (Model 3): if `within-person VRSQ` has a CI that excludes zero, cybersickness is attenuating the benefit within person. If `session × within-person VRSQ` is non-zero, the attenuation itself grows/shrinks with repeated exposures.
+- **Small-sample caveat**: with n = `r length(unique(df_analysis$participant))`, CIs are wide. Treat results as exploratory; effect sizes and direction matter more than p-values.

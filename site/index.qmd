@@ -1,0 +1,71 @@
+---
+title: "Semilongitudinal VR Forest Immersion"
+subtitle: "Analysis of effects on psychological well-being"
+---
+
+```{r}
+#| label: setup
+source("site/_setup.R")
+```
+
+## About the study
+
+**Semilongitudinální imerze do lesního prostředí ve virtuální realitě – analýza dopadů na psychickou pohodu.**
+
+Participants went through **5 sessions of 10-minute VR exposure** to a forest environment. At each session we collected:
+
+- **ROS** (Restoration Outcome Scale) — *pre* and *post* exposure
+- **POMS-SF** (Profile of Mood States – Short Form) — *pre* and *post* exposure
+- **SSQ** (Simulator Sickness Questionnaire) — *post* exposure
+
+The reports on this site summarise how these measures change within a session and across the five sessions.
+
+## Sample
+
+```{r}
+#| label: sample-summary
+n_participants <- nrow(participants)
+n_sessions <- 5
+
+tibble::tibble(
+  Measure = c("Participants", "Planned sessions / participant",
+              "ROS responses (pre + post)",
+              "POMS-SF responses (pre + post)",
+              "SSQ responses (post only)"),
+  Count = c(n_participants, n_sessions,
+            nrow(df_ros), nrow(distinct(df_poms, session_order, participant, timepoint)),
+            nrow(df_ssq))
+) |>
+  knitr::kable()
+```
+
+## Coverage by session
+
+The plot below shows how many participants have data available in each session, split by instrument. Gaps indicate drop-outs or missing questionnaires.
+
+```{r}
+#| label: coverage
+#| fig-height: 4
+coverage <- bind_rows(
+  df_ros %>% distinct(session_order, participant) %>% mutate(instrument = "ROS"),
+  df_poms %>% distinct(session_order, participant) %>% mutate(instrument = "POMS"),
+  df_ssq %>% distinct(session_order, participant) %>% mutate(instrument = "SSQ")
+) %>%
+  count(instrument, session_order, name = "n")
+
+ggplot(coverage, aes(x = factor(session_order), y = n, fill = instrument)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.75) +
+  geom_text(aes(label = n), position = position_dodge(width = 0.8),
+            vjust = -0.3, size = 3.2) +
+  labs(x = "Session", y = "Participants with data", fill = NULL) +
+  scale_fill_brewer(palette = "Set2") +
+  expand_limits(y = max(coverage$n) + 1)
+```
+
+## Analysis
+
+See the [Analysis](analysis.qmd) page for the full write-up:
+
+- descriptives of within-session change (Δ = post − pre) for ROS, each POMS subscale, and POMS Total Mood Disturbance (TMD)
+- mixed-effects models of how Δ evolves across sessions 1→5 — *does the benefit persist, grow, or fade?*
+- VRSQ (oculomotor + disorientation) as a moderator — *does cybersickness shrink the benefit on a given session?*

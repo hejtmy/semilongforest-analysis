@@ -1,0 +1,34 @@
+project:
+  type: website
+  output-dir: _site
+  execute-dir: project
+
+website:
+  title: "Semilongitudinal Forest VR Study"
+  description: "Analysis of semilongitudinal immersion in a forest environment in VR and its impact on psychological well-being."
+  navbar:
+    background: primary
+    left:
+      - href: index.qmd
+        text: Overview
+      - href: analysis.qmd
+        text: Analysis
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    code-fold: true
+    fig-width: 8
+    fig-height: 5
+    fig-align: center
+
+execute:
+  echo: false
+  warning: false
+  message: false
+  freeze: auto
+
+knitr:
+  opts_knit:
+    root.dir: ".."
