@@ -93,6 +93,9 @@ outcome_labels <- c(ROS = "ROS (restoration)", vitality = "POMS: Vitality",
 df_analysis <- df_analysis %>%
   mutate(outcome = factor(outcome, levels = outcome_levels),
          sign_improve = improvement_sign[as.character(outcome)],
-         improvement = delta * sign_improve)
+         improvement = delta * sign_improve,
+         # center session at 3 so the model intercept = estimated Δ at the
+         # mean session, i.e. the overall intervention effect averaged across sessions
+         session_c = session_order - 3)
 
 theme_set(theme_minimal(base_size = 12))
