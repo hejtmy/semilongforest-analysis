@@ -13,6 +13,8 @@ website:
         text: Overview
       - href: analysis.qmd
         text: Analysis
+      - href: conference.qmd
+        text: Conference summary
 
 format:
   html:
