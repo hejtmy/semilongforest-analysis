@@ -14,6 +14,7 @@ Participants did five 10-minute VR-forest sessions. We collected:
 
 - **ROS** (Restoration Outcome Scale) and **POMS-SF** (6 subscales + total mood disturbance) — **pre and post** each session
 - **VRSQ** (Virtual Reality Sickness Questionnaire; oculomotor and disorientation subscales) — **post** each session
+- **Physiological measures** (heart rate, systolic and diastolic blood pressure) — **pre and post** each session
 
 Our main interest is **how the within-session benefit evolves across sessions 1 → 5**. Does the effect of immersion persist, grow, or fade with repeated exposure? And is the size of the benefit on a given session shrunk when the same participant reports more VR sickness that day?
 
@@ -25,7 +26,7 @@ Our main interest is **how the within-session benefit evolves across sessions 1 
 2. **Pre × session interaction** — `score ~ timepoint * session_c + (1 + timepoint | participant)`. The `timepoint:session` term is the same "benefit evolution" test in the raw (pre, post) space. The `timepoint` main effect is the overall pre→post change averaged across sessions.
 3. **VRSQ moderation** — `Δ ~ session_c * vrsq_wc + vrsq_pm + (1 | participant)`. VRSQ is split into a **within-person** component (`_wc`, deviation from the participant's own mean) and a **between-person** component (`_pm`, participant's average). The within-person slope answers: *on your sicker-than-usual sessions, do you get less benefit?* — which is the moderation question a between-person correlation would conflate.
 
-**Centering**: `session_c = session_order − 3`, so the model intercept corresponds to the **middle session**, which equals the overall mean effect across sessions 1–5. Reported as "Overall Δ" in the tables below.
+**Centering**: `session_c = session_order − 1`, so the model intercept corresponds to **session 1**. Reported as "Session-1 Δ" in the tables below.
 
 **Random-effects structure**: We use **random intercepts only** for Models 1 and 3. With n = `r length(unique(df_analysis$participant))` participants, random slopes on `session` are underpowered — they were producing singular fits in earlier specifications, meaning the slope variance collapsed to zero and the term was not identifiable. Individual trajectory heterogeneity is shown descriptively in the spaghetti-plot + individual-OLS-slopes diagnostic below rather than asked of the model. Model 2 keeps a random slope on `timepoint` because it's estimated from 10 observations per participant (pre+post across 5 sessions), which is enough.
 
@@ -87,10 +88,9 @@ df_analysis %>%
     .groups = "drop"
   ) %>%
   mutate(`Δ mean (SD)` = sprintf("%.2f (%.2f)", mean_delta, sd_delta)) %>%
-  select(outcome, session_order, n, `Δ mean (SD)`) %>%
+  select(outcome, session_order, `Δ mean (SD)`) %>%
   tidyr::pivot_wider(names_from = session_order, values_from = `Δ mean (SD)`,
                      names_prefix = "S") %>%
-  select(-n) %>%
   rename(Outcome = outcome) %>%
   knitr::kable(caption = "Within-session change (Δ) by session, mean (SD).")
 ```
@@ -119,9 +119,9 @@ df_analysis %>%
 
 ## Model 1 — Trajectory of the benefit
 
-`Δ ~ session_c + (1 | participant)`, fit per outcome, with `session_c = session − 3`. Two terms of interest:
+`Δ ~ session_c + (1 | participant)`, fit per outcome, with `session_c = session − 1`. Two terms of interest:
 
-- **Intercept** — estimated Δ at the middle session, i.e. the **overall intervention effect** averaged across sessions 1–5. A CI that excludes zero (in the improvement direction) is evidence that the intervention works on average.
+- **Intercept** — estimated Δ at session 1. A CI that excludes zero (in the improvement direction) is evidence that the intervention works from the very first session.
 - **Slope on `session_c`** — change in Δ per additional session. Positive values = benefit is growing; negative = fading; near-zero = stable. Interpret the sign relative to the outcome's direction (see footnote).
 
 ```{r}
@@ -142,8 +142,8 @@ trajectory_results <- df_analysis %>%
     slope     <- coefs %>% filter(term == "session_c")
     tibble::tibble(
       Outcome = nm,
-      `Overall Δ` = sprintf("%+.2f", intercept$estimate),
-      `Overall 95% CI` = sprintf("[%+.2f, %+.2f]",
+      `Session-1 Δ` = sprintf("%+.2f", intercept$estimate),
+      `Session-1 95% CI` = sprintf("[%+.2f, %+.2f]",
                                  intercept$conf.low, intercept$conf.high),
       `Slope (per session)` = sprintf("%+.2f", slope$estimate),
       `Slope 95% CI` = sprintf("[%+.2f, %+.2f]",
@@ -153,7 +153,7 @@ trajectory_results <- df_analysis %>%
   })
 
 trajectory_results %>%
-  knitr::kable(caption = "Overall Δ = estimated within-session change averaged across sessions (model intercept at session 3). Slope = change in Δ per additional session. Raw scale: for negative-affect scales (anger, tension, fatigue, depression, confusion, TMD) a negative Δ or slope means an improvement/growing benefit; for ROS and vitality a positive Δ or slope means an improvement/growing benefit.")
+  knitr::kable(caption = "Session-1 Δ = estimated within-session change at session 1 (model intercept). Slope = change in Δ per additional session. Raw scale: for negative-affect scales (anger, tension, fatigue, depression, confusion, TMD) a negative Δ or slope means an improvement/growing benefit; for ROS and vitality a positive Δ or slope means an improvement/growing benefit.")
 ```
 
 ```{r}
@@ -164,10 +164,10 @@ pred_trajectory <- df_analysis %>%
   split(.$outcome) %>%
   purrr::imap_dfr(function(d, nm) {
     m <- fit_trajectory(d)
-    p <- ggeffects::ggpredict(m, terms = "session_c [-2:2]")
+    p <- ggeffects::ggpredict(m, terms = "session_c [0:4]")
     tibble::as_tibble(p) %>%
       mutate(outcome = nm,
-             session_order = x + 3)
+             session_order = x + 1)
   }) %>%
   mutate(outcome = factor(outcome, levels = outcome_levels))
 
@@ -191,9 +191,9 @@ ggplot() +
 
 ## Model 2 — Pre × Session interaction
 
-Same question, different parameterisation. We fit `score ~ timepoint * session_c + (1 + timepoint | participant)` on the long (pre, post) data, per outcome. With `session_c` centered at the middle session, two terms are of interest:
+Same question, different parameterisation. We fit `score ~ timepoint * session_c + (1 + timepoint | participant)` on the long (pre, post) data, per outcome. With `session_c = session − 1`, two terms are of interest:
 
-- **`timepointpost`** main effect — the average pre → post change across sessions. This is the **overall intervention effect** on the raw scale, equivalent to Model 1's intercept.
+- **`timepointpost`** main effect — the pre → post change at session 1. This is the **session-1 intervention effect** on the raw scale, equivalent to Model 1's intercept.
 - **`timepointpost:session_c`** interaction — whether the pre→post gap widens or shrinks across sessions (equivalent to Model 1's slope).
 
 The random slope on `timepoint` is retained here because it's estimated from 10 observations per participant (pre + post across 5 sessions), enough to identify individual responsiveness.
@@ -207,7 +207,7 @@ long_by_outcome <- bind_rows(
 ) %>%
   mutate(outcome = factor(outcome, levels = outcome_levels),
          timepoint = factor(timepoint, levels = c("pre", "post")),
-         session_c = as.integer(session_order) - 3)
+         session_c = as.integer(session_order) - 1)
 
 fit_interaction <- function(data) {
   m <- tryCatch(
@@ -237,7 +237,7 @@ interaction_results <- long_by_outcome %>%
     tibble::tibble(
       Outcome = nm,
       `Overall pre→post` = sprintf("%+.2f", main$estimate),
-      `Overall 95% CI` = sprintf("[%+.2f, %+.2f]",
+      `Session-1 95% CI` = sprintf("[%+.2f, %+.2f]",
                                  main$conf.low, main$conf.high),
       `Overall p` = sprintf("%.3f", main$p.value),
       `timepoint × session` = sprintf("%+.2f", inter$estimate),
@@ -258,7 +258,7 @@ Does a session with more VR-sickness erase the benefit that session? We use the 
 
 Primary moderator: **VRSQ total**. We fit `Δ ~ session_c * vrsq_total_wc + vrsq_total_pm + (1 | participant)`, per outcome. Reported terms:
 
-- **Intercept** — estimated Δ at the middle session, for a participant at their own average VRSQ. With the between-person control in the model, this is the **overall intervention effect** net of sickness.
+- **Intercept** — estimated Δ at session 1, for a participant at their own average VRSQ. With the between-person control in the model, this is the **session-1 intervention effect** net of sickness.
 - **within-person VRSQ** — average shrinkage (or enhancement) of Δ per unit of VRSQ deviation from your own mean, pooled across sessions.
 - **session × within-person VRSQ** — whether that sickness-related shrinkage itself grows or fades with repeated exposures.
 
@@ -285,8 +285,8 @@ extract_moderation <- function(data, wc, pm, label) {
       tibble::tibble(
         Outcome = nm,
         Moderator = label,
-        `Overall Δ` = sprintf("%+.2f", intercept$estimate),
-        `Overall 95% CI` = sprintf("[%+.2f, %+.2f]",
+        `Session-1 Δ` = sprintf("%+.2f", intercept$estimate),
+        `Session-1 95% CI` = sprintf("[%+.2f, %+.2f]",
                                     intercept$conf.low, intercept$conf.high),
         `Within-person VRSQ` = sprintf("%+.3f", wc_row$estimate),
         `VRSQ 95% CI` = sprintf("[%+.3f, %+.3f]",
@@ -306,7 +306,7 @@ moderation_disor <- extract_moderation(
   df_analysis, "vrsq_disor_wc", "vrsq_disor_pm", "VRSQ disorientation")
 
 bind_rows(moderation_total, moderation_oculo, moderation_disor) %>%
-  knitr::kable(caption = "VRSQ moderation of within-session benefit. Overall Δ = model intercept (Δ at mean session, at participant's own VRSQ average). Within-person VRSQ = Δ change per unit of deviation from your own mean. Non-zero = on your sicker-than-usual sessions, your benefit differs from your typical benefit.")
+  knitr::kable(caption = "VRSQ moderation of within-session benefit. Session-1 Δ = model intercept (Δ at session 1, at participant's own VRSQ average). Within-person VRSQ = Δ change per unit of deviation from your own mean. Non-zero = on your sicker-than-usual sessions, your benefit differs from your typical benefit.")
 ```
 
 ### Visualising the primary moderation
@@ -331,11 +331,131 @@ df_analysis %>%
        caption = "Dashed = no change; dotted = participant's own VRSQ mean. Line = pooled linear fit.")
 ```
 
+## Physiological measures
+
+Heart rate and blood pressure (systolic and diastolic) were recorded immediately before and after each session. The primary question is the same as for the psychological outcomes: does the intervention produce a reliable within-session drop, and does that effect change across the five sessions?
+
+**Outcomes**: Δ heart rate (bpm), Δ systolic BP (mmHg), Δ diastolic BP (mmHg), where Δ = post − pre. Negative values indicate a drop (i.e. physiological down-regulation), which is the expected direction for a restorative intervention.
+
+```{r}
+#| label: physio-descriptives
+df_physio_long <- df_physio %>%
+  select(participant, session_order, hr_delta, sys_delta, dias_delta) %>%
+  pivot_longer(cols = c(hr_delta, sys_delta, dias_delta),
+               names_to = "measure", values_to = "delta") %>%
+  mutate(measure = factor(measure,
+                          levels = c("hr_delta", "sys_delta", "dias_delta"),
+                          labels = c("Heart rate (bpm)", "Systolic BP (mmHg)",
+                                     "Diastolic BP (mmHg)")))
+
+df_physio_long %>%
+  group_by(measure, session_order) %>%
+  summarise(n = n(),
+            mean_delta = mean(delta, na.rm = TRUE),
+            sd_delta   = sd(delta,   na.rm = TRUE),
+            .groups = "drop") %>%
+  mutate(`Δ mean (SD)` = sprintf("%.2f (%.2f)", mean_delta, sd_delta)) %>%
+  select(measure, session_order, `Δ mean (SD)`) %>%
+  pivot_wider(names_from = session_order, values_from = `Δ mean (SD)`,
+              names_prefix = "S") %>%
+  rename(Measure = measure) %>%
+  knitr::kable(caption = "Within-session physiological change (Δ = post − pre) by session, mean (SD). Negative = reduction.")
+```
+
+```{r}
+#| label: physio-trajectories
+#| fig-height: 5
+df_physio_long %>%
+  ggplot(aes(x = session_order, y = delta,
+             color = participant, group = participant)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_line(alpha = 0.35) +
+  geom_point(size = 1.4, alpha = 0.75) +
+  stat_summary(aes(group = 1), fun = mean, geom = "line",
+               color = "black", linewidth = 1.1) +
+  stat_summary(aes(group = 1), fun = mean, geom = "point",
+               color = "black", size = 2.5) +
+  facet_wrap(~ measure, scales = "free_y") +
+  scale_x_continuous(breaks = 1:5) +
+  labs(x = "Session", y = "Δ (post − pre)",
+       caption = "Black = cross-participant mean. Negative Δ = physiological down-regulation.") +
+  theme(legend.position = "none")
+```
+
+### Model — Trajectory of physiological benefit
+
+`Δ ~ session_c + (1 | participant)`, fit per physiological outcome with `session_c = session − 1`.
+
+- **Intercept** — estimated Δ at session 1. A CI below zero is evidence of a reliable reduction from the first session.
+- **Slope on `session_c`** — change in Δ per additional session. Near-zero = stable effect; positive = effect is attenuating (less reduction in later sessions).
+
+```{r}
+#| label: physio-model
+#| warning: false
+df_physio_long_model <- df_physio_long %>%
+  mutate(session_c = session_order - 1)
+
+physio_trajectory_results <- df_physio_long_model %>%
+  split(.$measure) %>%
+  purrr::imap_dfr(function(d, nm) {
+    m <- lmerTest::lmer(delta ~ session_c + (1 | participant),
+                        data = d, REML = TRUE)
+    coefs <- broom.mixed::tidy(m, effects = "fixed", conf.int = TRUE,
+                               conf.method = "Wald")
+    intercept <- coefs %>% filter(term == "(Intercept)")
+    slope     <- coefs %>% filter(term == "session_c")
+    tibble::tibble(
+      Measure = nm,
+      `Session-1 Δ` = sprintf("%+.2f", intercept$estimate),
+      `Session-1 95% CI` = sprintf("[%+.2f, %+.2f]",
+                                  intercept$conf.low, intercept$conf.high),
+      `Slope (per session)` = sprintf("%+.2f", slope$estimate),
+      `Slope 95% CI` = sprintf("[%+.2f, %+.2f]",
+                               slope$conf.low, slope$conf.high),
+      `Slope p` = sprintf("%.3f", slope$p.value)
+    )
+  })
+
+physio_trajectory_results %>%
+  knitr::kable(caption = "Session-1 Δ = estimated within-session physiological change at session 1 (model intercept). Slope = change in Δ per additional session. Negative Session-1 Δ = down-regulation; positive slope = attenuation of the effect over sessions.")
+```
+
+```{r}
+#| label: physio-model-plot
+#| fig-height: 5
+physio_pred <- df_physio_long_model %>%
+  split(.$measure) %>%
+  purrr::imap_dfr(function(d, nm) {
+    m <- lmerTest::lmer(delta ~ session_c + (1 | participant),
+                        data = d, REML = TRUE)
+    p <- ggeffects::ggpredict(m, terms = "session_c [0:4]")
+    tibble::as_tibble(p) %>%
+      mutate(measure = nm, session_order = x + 1)
+  })
+
+ggplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_jitter(data = df_physio_long_model,
+              aes(x = session_order, y = delta),
+              width = 0.1, alpha = 0.3, size = 1.2) +
+  geom_ribbon(data = physio_pred,
+              aes(x = session_order, ymin = conf.low, ymax = conf.high),
+              alpha = 0.2, fill = "#1f78b4") +
+  geom_line(data = physio_pred,
+            aes(x = session_order, y = predicted),
+            color = "#1f78b4", linewidth = 1) +
+  facet_wrap(~ measure, scales = "free_y") +
+  scale_x_continuous(breaks = 1:5) +
+  labs(x = "Session", y = "Δ (post − pre)",
+       caption = "Line = model-predicted Δ; ribbon = 95% CI; dots = observed Δ.")
+```
+
 ## Interpretation checklist
 
 When reading the tables above:
 
-- **Does the intervention work on average?** — look at the *Overall Δ* / *Overall pre→post* column in Models 1, 2, 3. A CI that excludes zero in the improvement direction (positive for ROS and vitality; negative for the negative-affect scales and TMD) is evidence of an overall intervention effect across the 5 sessions.
+- **Does the intervention work at session 1?** — look at the *Session-1 Δ* / *Overall pre→post* column in Models 1, 2, 3. A CI that excludes zero in the improvement direction (positive for ROS and vitality; negative for the negative-affect scales and TMD) is evidence of an intervention effect at the first session.
 - **Stability of benefit** (Models 1 & 2): if the `session` slope / `timepoint × session` term has a CI that comfortably straddles zero, the benefit is *not detectably changing* across the 5 sessions — i.e. immersion is still working by session 5. If the CI is on the "fading" side of zero, that's evidence of habituation.
 - **Moderation** (Model 3): if `within-person VRSQ` has a CI that excludes zero, cybersickness is attenuating the benefit within person. If `session × within-person VRSQ` is non-zero, the attenuation itself grows/shrinks with repeated exposures.
+- **Physiological outcomes**: a negative *Session-1 Δ* for heart rate, systolic, or diastolic BP indicates down-regulation was already present at the first session. A positive slope would indicate the effect is attenuating across sessions.
 - **Small-sample caveat**: with n = `r length(unique(df_analysis$participant))`, CIs are wide. Treat results as exploratory; effect sizes and direction matter more than p-values.

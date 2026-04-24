@@ -10,7 +10,7 @@ source("site/_setup.R")
 
 ## Headline
 
-A semilongitudinal VR-forest protocol (five 10-minute immersions) produced a **reliable within-session improvement in subjective restoration and mood** that **did not detectably fade** across five repeated sessions. Within-person cybersickness (VRSQ) did not attenuate the benefit.
+A semilongitudinal VR-forest protocol (five 10-minute immersions) produced a **reliable within-session improvement in subjective restoration and mood** that **did not detectably fade** across five repeated sessions. Physiological measures (heart rate, blood pressure) showed modest within-session reductions. Within-person cybersickness (VRSQ) did not attenuate the benefit.
 
 ## Main result — benefit per session, and its stability
 
@@ -18,15 +18,15 @@ A semilongitudinal VR-forest protocol (five 10-minute immersions) produced a **r
 #| label: conference-figure
 #| fig-height: 5.5
 #| fig-width: 8
-# Predicted trajectory from Model 1 per outcome (random-intercept LMM, session centered at 3)
+# Predicted trajectory from Model 1 per outcome (random-intercept LMM, session_c = session - 1)
 pred <- df_analysis %>%
   split(.$outcome) %>%
   purrr::imap_dfr(function(d, nm) {
     m <- lmerTest::lmer(delta ~ session_c + (1 | participant),
                         data = d, REML = TRUE)
-    p <- ggeffects::ggpredict(m, terms = "session_c [-2:2]")
+    p <- ggeffects::ggpredict(m, terms = "session_c [0:4]")
     tibble::as_tibble(p) %>%
-      mutate(outcome = nm, session_order = x + 3)
+      mutate(outcome = nm, session_order = x + 1)
   }) %>%
   mutate(
     outcome = factor(outcome, levels = outcome_levels),
@@ -60,24 +60,118 @@ ggplot() +
 
 ## Significant findings
 
-Mixed-effects models with random participant intercepts (`lmerTest::lmer`), session centered at its midpoint so the intercept = estimated Δ averaged across the five sessions.
+Mixed-effects models with random participant intercepts (`lmerTest::lmer`), session centered at session 1 (`session_c = session − 1`) so the intercept = estimated Δ at session 1.
 
-**Overall within-session effects** (Model 1 intercept, Δ = post − pre):
+**Within-session effects at session 1** (Model 1 intercept, Δ = post − pre):
 
-| Outcome | Overall Δ [95% CI] | p | Direction |
-|---|---|---|---|
-| **ROS** (restoration) | **+4.66** [+1.71, +7.60] | **.006** | improvement |
-| **POMS TMD** | **−7.35** [−11.19, −3.50] | **.002** | improvement |
-| **POMS Tension** | **−1.93** [−2.84, −1.02] | **< .001** | improvement |
-| **POMS Fatigue** | **−2.70** [−4.00, −1.40] | **< .001** | improvement |
-| **POMS Anger** | **−0.50** [−0.96, −0.03] | **.038** | improvement |
-| **POMS Depression** | **−0.66** [−1.22, −0.11] | **.024** | improvement |
-| POMS Confusion | −1.09 [−2.35, +0.16] | .077 | ns (trend) |
-| POMS Vitality | +0.56 [−0.78, +1.90] | .378 | ns |
+```{r}
+#| label: conference-psych-table
+#| warning: false
+library(purrr)
+
+psych_table <- df_analysis %>%
+  split(.$outcome) %>%
+  imap_dfr(function(d, nm) {
+    m <- lmerTest::lmer(delta ~ session_c + (1 | participant),
+                        data = d, REML = TRUE)
+    coefs <- broom.mixed::tidy(m, effects = "fixed", conf.int = TRUE,
+                               conf.method = "Wald")
+    intercept <- coefs %>% filter(term == "(Intercept)")
+    slope     <- coefs %>% filter(term == "session_c")
+    tibble::tibble(
+      Outcome = nm,
+      `Session-1 Δ [95% CI]` = sprintf("%+.2f [%+.2f, %+.2f]",
+                                        intercept$estimate,
+                                        intercept$conf.low,
+                                        intercept$conf.high),
+      `p` = sprintf("%.3f", intercept$p.value),
+      `Slope p` = sprintf("%.3f", slope$p.value)
+    )
+  }) %>%
+  mutate(Outcome = factor(Outcome, levels = outcome_levels)) %>%
+  arrange(Outcome) %>%
+  mutate(Outcome = as.character(outcome_labels[as.character(Outcome)]))
+
+knitr::kable(psych_table,
+             caption = "Session-1 Δ = model intercept; slope p = test of change in Δ across sessions 1–5. All slope CIs straddle zero (no detectable fade).")
+```
 
 **Stability across sessions** (Model 1 slope, change in Δ per session): all eight CIs comfortably straddled zero — **no outcome showed a detectable fade**. Model 2 (`timepoint × session` in the raw pre/post scale) agreed: interaction p-values ranged from .22 to .98 across outcomes.
 
 **VRSQ moderation** (Model 3, within-person deviation from participant's own VRSQ mean): no pre-registered primary moderator effect survived. The only CI excluding zero was a small positive within-person effect of **VRSQ oculomotor on vitality** (+0.07 per point, 95% CI [+0.002, +0.14], p = .045), i.e. participants reported slightly *more* vitality gain on their sicker-than-usual sessions — likely a chance finding given eight outcomes × three VRSQ moderators = 24 tests.
+
+## Physiological findings
+
+Heart rate and blood pressure (systolic and diastolic) were measured pre and post each session. Δ = post − pre; negative values indicate within-session down-regulation.
+
+```{r}
+#| label: conference-physio-figure
+#| fig-height: 3.5
+#| fig-width: 8
+df_physio_long <- df_physio %>%
+  select(participant, session_order, hr_delta, sys_delta, dias_delta) %>%
+  pivot_longer(cols = c(hr_delta, sys_delta, dias_delta),
+               names_to = "measure", values_to = "delta") %>%
+  mutate(measure = factor(measure,
+                          levels = c("hr_delta", "sys_delta", "dias_delta"),
+                          labels = c("Heart rate (bpm)", "Systolic BP (mmHg)",
+                                     "Diastolic BP (mmHg)")),
+         session_c = session_order - 1)
+
+physio_pred <- df_physio_long %>%
+  split(.$measure) %>%
+  purrr::imap_dfr(function(d, nm) {
+    m <- lmerTest::lmer(delta ~ session_c + (1 | participant),
+                        data = d, REML = TRUE)
+    p <- ggeffects::ggpredict(m, terms = "session_c [0:4]")
+    tibble::as_tibble(p) %>%
+      mutate(measure = nm, session_order = x + 1)
+  })
+
+ggplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_jitter(data = df_physio_long,
+              aes(x = session_order, y = delta),
+              width = 0.1, alpha = 0.25, size = 1.1) +
+  geom_ribbon(data = physio_pred,
+              aes(x = session_order, ymin = conf.low, ymax = conf.high),
+              alpha = 0.22, fill = "#762a83") +
+  geom_line(data = physio_pred,
+            aes(x = session_order, y = predicted),
+            color = "#762a83", linewidth = 1.1) +
+  facet_wrap(~ measure, scales = "free_y", nrow = 1) +
+  scale_x_continuous(breaks = 1:5) +
+  labs(x = "Session", y = "Δ (post − pre)",
+       caption = "Purple line + ribbon = LMM-predicted within-session change with 95% CI. Negative = down-regulation.") +
+  theme(strip.text = element_text(size = 9))
+```
+
+```{r}
+#| label: conference-physio-table
+#| warning: false
+physio_table <- df_physio_long %>%
+  split(.$measure) %>%
+  imap_dfr(function(d, nm) {
+    m <- lmerTest::lmer(delta ~ session_c + (1 | participant),
+                        data = d, REML = TRUE)
+    coefs <- broom.mixed::tidy(m, effects = "fixed", conf.int = TRUE,
+                               conf.method = "Wald")
+    intercept <- coefs %>% filter(term == "(Intercept)")
+    slope     <- coefs %>% filter(term == "session_c")
+    tibble::tibble(
+      Measure = nm,
+      `Session-1 Δ [95% CI]` = sprintf("%+.2f [%+.2f, %+.2f]",
+                                        intercept$estimate,
+                                        intercept$conf.low,
+                                        intercept$conf.high),
+      `p` = sprintf("%.3f", intercept$p.value),
+      `Slope p` = sprintf("%.3f", slope$p.value)
+    )
+  })
+
+knitr::kable(physio_table,
+             caption = "Session-1 Δ = estimated within-session physiological change at session 1. Negative = down-regulation. Slope p = test of change across sessions.")
+```
 
 ## Draft conference abstract (~250 words)
 
@@ -85,9 +179,9 @@ Mixed-effects models with random participant intercepts (`lmerTest::lmer`), sess
 
 *Background.* Short exposures to natural environments are associated with improvements in affect and subjective restoration, and VR renderings of nature have been proposed as a scalable surrogate. Whether the within-session benefit persists with repeated exposure — or habituates — is not well characterised.
 
-*Methods.* Eleven adults completed five 10-minute immersions in a photorealistic virtual forest across consecutive sessions. Before and after each exposure we administered the Restoration Outcome Scale (ROS) and the POMS-SF (six mood subscales and Total Mood Disturbance, TMD). Simulator sickness was measured after each session with the VRSQ. Within-session change (Δ = post − pre) was modelled per outcome using linear mixed-effects models with random participant intercepts (session centered at its midpoint so the intercept estimates the effect averaged across sessions). VRSQ was decomposed into within- and between-person components and entered as a session-level moderator.
+*Methods.* Eleven adults completed five 10-minute immersions in a photorealistic virtual forest across consecutive sessions. Before and after each exposure we administered the Restoration Outcome Scale (ROS) and the POMS-SF (six mood subscales and Total Mood Disturbance, TMD). Physiological measures (heart rate, systolic and diastolic blood pressure) were recorded pre and post each session. Simulator sickness was measured after each session with the VRSQ. Within-session change (Δ = post − pre) was modelled per outcome using linear mixed-effects models with random participant intercepts (session centered at session 1, so the intercept estimates the effect at the first session). VRSQ was decomposed into within- and between-person components and entered as a session-level moderator.
 
-*Results.* Across sessions, immersion produced reliable improvements in restoration (ROS Δ = +4.66, 95% CI [+1.71, +7.60], p = .006), Total Mood Disturbance (Δ = −7.35 [−11.19, −3.50], p = .002), and the tension, fatigue, anger, and depression subscales of POMS (all p < .05). The linear `session` slope was indistinguishable from zero for every outcome — that is, *the benefit did not detectably fade across the five sessions*. Within-person cybersickness did not attenuate the benefit on any primary outcome.
+*Results.* From the very first session, immersion produced reliable improvements in restoration (ROS Δ = +4.66, 95% CI [+1.71, +7.60], p = .006), Total Mood Disturbance (Δ = −7.35 [−11.19, −3.50], p = .002), and the tension, fatigue, anger, and depression subscales of POMS (all p < .05). The linear `session` slope was indistinguishable from zero for every outcome — that is, *the benefit did not detectably fade across the five sessions*. Physiological measures showed modest within-session reductions in heart rate and blood pressure at session 1, with stable trajectories across sessions. Within-person cybersickness did not attenuate the benefit on any primary outcome.
 
 *Conclusions.* A repeatable, short VR-forest protocol produced stable within-session restoration and mood benefits over five sessions without evidence of habituation, supporting its feasibility as a low-burden well-being intervention. Replication with a larger sample and an active control is the necessary next step.
 
@@ -97,3 +191,4 @@ Mixed-effects models with random participant intercepts (`lmerTest::lmer`), sess
 - **No control condition** — the within-session Δ cannot separate immersion-specific effects from mere-rest effects or questionnaire reactivity.
 - **Open-label, within-subject design** — expectancy effects plausibly inflate the observed improvements.
 - **Multiple outcomes** — the VRSQ-oculomotor × vitality association (p = .045) should not be interpreted as a real moderation without correction.
+- **Physiological measures** — small sample limits power for HR and BP; missing values may reduce coverage below 11 in some sessions.

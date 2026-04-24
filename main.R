@@ -1,22 +1,25 @@
 library(psychotronr)
 library(tidyr)
 library(ggplot2)
-source("functions/processing.R")
+library(here)
+source(here("functions/processing.R"))
+source(here("functions/loading.R"))
 
 raw <- jsonlite::fromJSON("data/study_export.json")
 data <- organize_psychotron_data(raw)
 organized <- split_participant_email(data, drop_email = TRUE)
 surveys <- organized$surveys
-names(surveys)
+
 
 poms_1 <- surveys[["1-poms-sf-pre"]]
 poms_1$data
 ros_1 <- surveys[["1-ros-pre"]]
 ros_1$data
 ssq_data <- surveys[["2-ssq"]]$data
+physio_data <- load_physio_data()
+physio_data <- process_physio(physio_data)
 
 # unnest the poms1_data_poms colum, which is a matrix using regular r without dplyr
-organize
 df_poms <- process_all_poms(organized$surveys) %>%
   select(session_order, participant, timepoint, 
          anger, vitality, fatigue, depression, confusion, tension) %>%

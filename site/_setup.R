@@ -7,6 +7,7 @@ suppressPackageStartupMessages({
   library(lmerTest)
   library(broom.mixed)
   library(ggeffects)
+  library(googlesheets4)
 })
 
 # All paths are resolved from the project root (see knitr::opts_knit$root.dir in _quarto.yml)
@@ -94,8 +95,15 @@ df_analysis <- df_analysis %>%
   mutate(outcome = factor(outcome, levels = outcome_levels),
          sign_improve = improvement_sign[as.character(outcome)],
          improvement = delta * sign_improve,
-         # center session at 3 so the model intercept = estimated Δ at the
-         # mean session, i.e. the overall intervention effect averaged across sessions
-         session_c = session_order - 3)
+         # session_c = 0 at session 1, so the model intercept = estimated Δ at the first session
+         session_c = session_order - 1)
+
+# Physiological data
+source("functions/loading.R")
+df_physio <- load_physio_data() %>%
+  process_physio() %>%
+  rename(session_order = session) %>%
+  mutate(session_order = as.integer(session_order),
+         session_c = session_order - 1)
 
 theme_set(theme_minimal(base_size = 12))
