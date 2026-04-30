@@ -96,7 +96,7 @@ ul.task-list li input[type="checkbox"] {
 <span class="menu-text">Analysis</span></a>
   </li>  
   <li class="nav-item">
-    <a class="nav-link active" href="./conference.html" aria-current="page"> 
+    <a class="nav-link" href="./conference.html"> 
 <span class="menu-text">Conference summary</span></a>
   </li>  
 </ul>
@@ -122,7 +122,6 @@ ul.task-list li input[type="checkbox"] {
   <ul class="collapse">
   <li><a href="#within-session-effects-at-session-1-paired-t-tests" id="toc-within-session-effects-at-session-1-paired-t-tests" class="nav-link" data-scroll-target="#within-session-effects-at-session-1-paired-t-tests">Within-session effects at session 1 (paired t-tests)</a></li>
   <li><a href="#stability-across-sessions-linear-mixed-model-slopes" id="toc-stability-across-sessions-linear-mixed-model-slopes" class="nav-link" data-scroll-target="#stability-across-sessions-linear-mixed-model-slopes">Stability across sessions (linear mixed-model slopes)</a></li>
-  <li><a href="#vrsq-moderation" id="toc-vrsq-moderation" class="nav-link" data-scroll-target="#vrsq-moderation">VRSQ moderation</a></li>
   </ul></li>
   <li><a href="#physiological-model-fit" id="toc-physiological-model-fit" class="nav-link" data-scroll-target="#physiological-model-fit">Physiological model fit</a></li>
   <li><a href="#draft-conference-abstract-250-words" id="toc-draft-conference-abstract-250-words" class="nav-link" data-scroll-target="#draft-conference-abstract-250-words">Draft conference abstract (~250 words)</a></li>
@@ -417,259 +416,7 @@ ul.task-list li input[type="checkbox"] {
 </div>
 </div>
 <p><strong>Summary</strong>: all psychological and physiological slope CIs comfortably straddled zero — <strong>no outcome showed a detectable fade or growth</strong>. Model 2 (<code>timepoint × session</code> in the raw pre/post scale, see <code>analysis.qmd</code>) agreed: interaction p-values ranged from .22 to .98 across psychological outcomes.</p>
-</section>
-<section id="vrsq-moderation" class="level3">
-<h3 class="anchored" data-anchor-id="vrsq-moderation">VRSQ moderation</h3>
-<p>To keep the moderation readout simple, we re-expressed every outcome as <strong>improvement</strong> so that positive values always mean a more beneficial within-session change. For psychology this is the sign-flipped <code>Δ</code> already stored in <code>df_analysis$improvement</code>; for physiology it is <code>-Δ</code>, so a larger positive value means a larger down-regulation. Negative VRSQ slopes therefore mean <strong>more sickness = less benefit</strong>.</p>
-<p>At <strong>session 1</strong> we fit a simple linear model per outcome: <code>improvement ~ vrsq_total</code>. Across <strong>all sessions</strong> we fit a pooled random-intercept model per outcome: <code>improvement ~ session_c + vrsq_total_wc + vrsq_total_pm + (1 | participant)</code>, where <code>vrsq_total_wc</code> is the within-person deviation from the participant’s own average VRSQ total.</p>
-<div class="cell">
-<div class="cell-output-display">
-<table class="caption-top table table-sm table-striped small">
-<caption>Session-1 simple VRSQ moderation for psychological outcomes. Outcome scale = improvement, so negative slopes mean higher VRSQ total was associated with less benefit in session 1.</caption>
-<thead>
-<tr class="header">
-<th style="text-align: left;">Measure</th>
-<th style="text-align: right;">n</th>
-<th style="text-align: left;">Session-1 VRSQ slope</th>
-<th style="text-align: left;">95% CI</th>
-<th style="text-align: left;">p</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">ROS (restoration)</td>
-<td style="text-align: right;">11</td>
-<td style="text-align: left;">-0.264</td>
-<td style="text-align: left;">[-0.638, +0.111]</td>
-<td style="text-align: left;">0.146</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">POMS: Vitality</td>
-<td style="text-align: right;">11</td>
-<td style="text-align: left;">+0.002</td>
-<td style="text-align: left;">[-0.077, +0.082]</td>
-<td style="text-align: left;">0.950</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">POMS: TMD</td>
-<td style="text-align: right;">11</td>
-<td style="text-align: left;">-0.213</td>
-<td style="text-align: left;">[-0.621, +0.196]</td>
-<td style="text-align: left;">0.269</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">POMS: Anger</td>
-<td style="text-align: right;">11</td>
-<td style="text-align: left;">-0.000</td>
-<td style="text-align: left;">[-0.031, +0.031]</td>
-<td style="text-align: left;">0.980</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">POMS: Tension</td>
-<td style="text-align: right;">11</td>
-<td style="text-align: left;">-0.035</td>
-<td style="text-align: left;">[-0.166, +0.096]</td>
-<td style="text-align: left;">0.558</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">POMS: Fatigue</td>
-<td style="text-align: right;">11</td>
-<td style="text-align: left;">-0.087</td>
-<td style="text-align: left;">[-0.303, +0.129]</td>
-<td style="text-align: left;">0.384</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">POMS: Depression</td>
-<td style="text-align: right;">11</td>
-<td style="text-align: left;">-0.035</td>
-<td style="text-align: left;">[-0.091, +0.021]</td>
-<td style="text-align: left;">0.189</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">POMS: Confusion</td>
-<td style="text-align: right;">11</td>
-<td style="text-align: left;">-0.057</td>
-<td style="text-align: left;">[-0.201, +0.086]</td>
-<td style="text-align: left;">0.390</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="cell">
-<div class="cell-output-display">
-<table class="caption-top table table-sm table-striped small">
-<caption>All-session pooled VRSQ moderation for psychological outcomes. Slope = within-person change in improvement per 1-point increase in VRSQ total above the participant’s own mean. Negative slopes mean less benefit on sicker-than-usual sessions.</caption>
-<colgroup>
-<col style="width: 26%">
-<col style="width: 4%">
-<col style="width: 34%">
-<col style="width: 25%">
-<col style="width: 8%">
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: left;">Measure</th>
-<th style="text-align: right;">n</th>
-<th style="text-align: left;">All-session VRSQ slope</th>
-<th style="text-align: left;">95% CI</th>
-<th style="text-align: left;">p</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">ROS (restoration)</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: left;">-0.023</td>
-<td style="text-align: left;">[-0.372, +0.327]</td>
-<td style="text-align: left;">0.896</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">POMS: Vitality</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: left;">+0.088</td>
-<td style="text-align: left;">[-0.015, +0.190]</td>
-<td style="text-align: left;">0.091</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">POMS: TMD</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: left;">-0.034</td>
-<td style="text-align: left;">[-0.256, +0.187]</td>
-<td style="text-align: left;">0.754</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">POMS: Anger</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: left;">+0.027</td>
-<td style="text-align: left;">[-0.031, +0.084]</td>
-<td style="text-align: left;">0.349</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">POMS: Tension</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: left;">-0.064</td>
-<td style="text-align: left;">[-0.137, +0.010]</td>
-<td style="text-align: left;">0.088</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">POMS: Fatigue</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: left;">-0.019</td>
-<td style="text-align: left;">[-0.135, +0.098]</td>
-<td style="text-align: left;">0.745</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">POMS: Depression</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: left;">-0.027</td>
-<td style="text-align: left;">[-0.083, +0.030]</td>
-<td style="text-align: left;">0.345</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">POMS: Confusion</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: left;">-0.040</td>
-<td style="text-align: left;">[-0.113, +0.033]</td>
-<td style="text-align: left;">0.274</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="cell">
-<div class="cell-output-display">
-<table class="caption-top table table-sm table-striped small">
-<caption>Session-1 simple VRSQ moderation for physiological outcomes. Improvement is coded so positive values mean larger down-regulation; negative slopes mean higher VRSQ total was associated with less physiological benefit in session 1.</caption>
-<colgroup>
-<col style="width: 29%">
-<col style="width: 4%">
-<col style="width: 31%">
-<col style="width: 25%">
-<col style="width: 8%">
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: left;">Measure</th>
-<th style="text-align: right;">n</th>
-<th style="text-align: left;">Session-1 VRSQ slope</th>
-<th style="text-align: left;">95% CI</th>
-<th style="text-align: left;">p</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">Diastolic BP (mmHg)</td>
-<td style="text-align: right;">11</td>
-<td style="text-align: left;">+0.087</td>
-<td style="text-align: left;">[-0.361, +0.534]</td>
-<td style="text-align: left;">0.671</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Heart rate (bpm)</td>
-<td style="text-align: right;">11</td>
-<td style="text-align: left;">-0.212</td>
-<td style="text-align: left;">[-0.596, +0.171]</td>
-<td style="text-align: left;">0.242</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Systolic BP (mmHg)</td>
-<td style="text-align: right;">11</td>
-<td style="text-align: left;">+0.163</td>
-<td style="text-align: left;">[-0.385, +0.711]</td>
-<td style="text-align: left;">0.519</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="cell">
-<div class="cell-output-display">
-<table class="caption-top table table-sm table-striped small">
-<caption>All-session pooled VRSQ moderation for physiological outcomes. Negative slopes mean less physiological down-regulation on sicker-than-usual sessions.</caption>
-<colgroup>
-<col style="width: 28%">
-<col style="width: 4%">
-<col style="width: 33%">
-<col style="width: 24%">
-<col style="width: 8%">
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: left;">Measure</th>
-<th style="text-align: right;">n</th>
-<th style="text-align: left;">All-session VRSQ slope</th>
-<th style="text-align: left;">95% CI</th>
-<th style="text-align: left;">p</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">Diastolic BP (mmHg)</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: left;">-0.311</td>
-<td style="text-align: left;">[-0.574, -0.049]</td>
-<td style="text-align: left;">0.022</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Heart rate (bpm)</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: left;">+0.137</td>
-<td style="text-align: left;">[-0.165, +0.438]</td>
-<td style="text-align: left;">0.366</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Systolic BP (mmHg)</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: left;">-0.246</td>
-<td style="text-align: left;">[-0.808, +0.316]</td>
-<td style="text-align: left;">0.380</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<p>Across the psychological outcomes, the session-1 and pooled all-session VRSQ-total slopes were small and their CIs all included zero. For physiology, the only CI excluding zero was a pooled negative association for <strong>diastolic BP</strong>, suggesting slightly less down-regulation on participants’ sicker-than-usual sessions; with three physiological outcomes and a small sample, this should be treated as exploratory.</p>
+<p><strong>VRSQ moderation</strong> (Model 3, within-person deviation from participant’s own VRSQ mean): no pre-registered primary moderator effect survived. The only CI excluding zero was a small positive within-person effect of <strong>VRSQ oculomotor on vitality</strong> (+0.07 per point, 95% CI [+0.002, +0.14], p = .045), i.e.&nbsp;participants reported slightly <em>more</em> vitality gain on their sicker-than-usual sessions — likely a chance finding given eight outcomes × three VRSQ moderators = 24 tests.</p>
 </section>
 </section>
 <section id="physiological-model-fit" class="level2">
@@ -689,8 +436,8 @@ ul.task-list li input[type="checkbox"] {
 <h2 class="anchored" data-anchor-id="draft-conference-abstract-250-words">Draft conference abstract (~250 words)</h2>
 <p><strong>Semilongitudinal VR-forest immersion: within-session improvements in restoration and mood persist across five repeated sessions</strong></p>
 <p><em>Background.</em> Short exposures to natural environments are associated with improvements in affect and subjective restoration, and VR renderings of nature have been proposed as a scalable surrogate. Whether the within-session benefit persists with repeated exposure — or habituates — is not well characterised.</p>
-<p><em>Methods.</em> Eleven adults completed five 10-minute immersions in a photorealistic virtual forest across consecutive sessions. Before and after each exposure we administered the Restoration Outcome Scale (ROS) and the POMS-SF (six mood subscales and Total Mood Disturbance, TMD). Physiological measures (heart rate, systolic and diastolic blood pressure) were recorded pre and post each session. Simulator sickness was measured after each session with the VRSQ. Session-1 within-session effects (Δ = post − pre) were tested with paired t-tests per outcome. The change in Δ across sessions 1–5 was tested with linear mixed-effects models (<code>Δ ~ session + (1 | participant)</code>). As a simple moderation check, VRSQ total was tested against improvement at session 1 and in pooled mixed models across all sessions.</p>
-<p><em>Results.</em> From the very first session, paired t-tests showed reliable within-subject improvements in restoration and mood (Total Mood Disturbance and the tension, fatigue, anger, and depression subscales of POMS). LMM slopes on session were indistinguishable from zero for every outcome (psychological and physiological) — that is, <em>the benefit did not detectably fade or grow across the five sessions</em>. Physiological measures showed modest within-session reductions in heart rate and blood pressure at session 1, with stable trajectories across sessions. Simple VRSQ-total moderation models were near-zero for the psychological outcomes; the only CI excluding zero was a pooled negative association with diastolic BP.</p>
+<p><em>Methods.</em> Eleven adults completed five 10-minute immersions in a photorealistic virtual forest across consecutive sessions. Before and after each exposure we administered the Restoration Outcome Scale (ROS) and the POMS-SF (six mood subscales and Total Mood Disturbance, TMD). Physiological measures (heart rate, systolic and diastolic blood pressure) were recorded pre and post each session. Simulator sickness was measured after each session with the VRSQ. Session-1 within-session effects (Δ = post − pre) were tested with paired t-tests per outcome. The change in Δ across sessions 1–5 was tested with linear mixed-effects models (<code>Δ ~ session + (1 | participant)</code>). VRSQ was decomposed into within- and between-person components and entered as a session-level moderator.</p>
+<p><em>Results.</em> From the very first session, paired t-tests showed reliable within-subject improvements in restoration and mood (Total Mood Disturbance and the tension, fatigue, anger, and depression subscales of POMS). LMM slopes on session were indistinguishable from zero for every outcome (psychological and physiological) — that is, <em>the benefit did not detectably fade or grow across the five sessions</em>. Physiological measures showed modest within-session reductions in heart rate and blood pressure at session 1, with stable trajectories across sessions. Within-person cybersickness did not attenuate the benefit on any primary outcome.</p>
 <p><em>Conclusions.</em> A repeatable, short VR-forest protocol produced stable within-session restoration and mood benefits over five sessions without evidence of habituation, supporting its feasibility as a low-burden well-being intervention. Replication with a larger sample and an active control is the necessary next step.</p>
 </section>
 <section id="caveats-for-discussion-slide" class="level2">
@@ -699,7 +446,7 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>n = 11</strong> analytical sample (one enrolled participant had incomplete pre/post data). Effect sizes are usable; CIs are wide.</li>
 <li><strong>No control condition</strong> — the within-session Δ cannot separate immersion-specific effects from mere-rest effects or questionnaire reactivity.</li>
 <li><strong>Open-label, within-subject design</strong> — expectancy effects plausibly inflate the observed improvements.</li>
-<li><strong>Multiple outcomes</strong> — the VRSQ moderation tables are exploratory across several outcomes and should be interpreted as pattern-descriptions rather than corrected confirmatory tests.</li>
+<li><strong>Multiple outcomes</strong> — the VRSQ-oculomotor × vitality association (p = .045) should not be interpreted as a real moderation without correction.</li>
 <li><strong>Physiological measures</strong> — small sample limits power for HR and BP; missing values may reduce coverage below 11 in some sessions.</li>
 </ul>
 
@@ -799,7 +546,7 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
   }
     var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
     var mailtoRegex = new RegExp(/^mailto:/);
-      var filterRegex = new RegExp("https:\/\/hejtmy\.github\.io\/semilongforest-analysis\/");
+      var filterRegex = new RegExp('/' + window.location.host + '/');
     var isInternal = (href) => {
         return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
     }
