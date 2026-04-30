@@ -12,6 +12,60 @@ source("site/_setup.R")
 
 A semilongitudinal VR-forest protocol (five 10-minute immersions) produced a **reliable within-session improvement in subjective restoration and mood** that **did not detectably fade** across five repeated sessions. Physiological measures (heart rate, blood pressure) showed modest within-session reductions. Within-person cybersickness (VRSQ) did not attenuate the benefit.
 
+## Overview — trajectories across the five sessions
+
+```{r}
+#| label: conference-overview-figure
+#| fig-height: 6.5
+#| fig-width: 9
+library(patchwork)
+
+overview_psych <- df_analysis %>%
+  filter(outcome %in% c("ROS", "tmd")) %>%
+  mutate(panel = factor(outcome,
+                        levels = c("ROS", "tmd"),
+                        labels = c("ROS (Δ; positive = more restoration)",
+                                   "POMS TMD (Δ; negative = better mood)")),
+         participant = as.factor(participant)) %>%
+  select(participant, session_order, panel, value = delta)
+
+overview_physio <- df_physio %>%
+  select(participant, session_order, hr_delta, sys_delta, dias_delta) %>%
+  pivot_longer(cols = c(hr_delta, sys_delta, dias_delta),
+               names_to = "panel", values_to = "value") %>%
+  mutate(panel = factor(panel,
+                        levels = c("hr_delta", "sys_delta", "dias_delta"),
+                        labels = c("Heart rate (Δ bpm)",
+                                   "Systolic BP (Δ mmHg)",
+                                   "Diastolic BP (Δ mmHg)")),
+         participant = as.factor(participant))
+
+trajectory_layer <- function(d) {
+  ggplot(d, aes(x = session_order, y = value)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+    geom_line(aes(group = participant, color = participant), alpha = 0.4) +
+    geom_point(aes(color = participant), size = 1.3, alpha = 0.7) +
+    stat_summary(aes(group = 1), fun = mean, geom = "line",
+                 color = "black", linewidth = 1.4) +
+    stat_summary(aes(group = 1), fun = mean, geom = "point",
+                 color = "black", size = 2.6) +
+    facet_wrap(~ panel, scales = "free_y", nrow = 1) +
+    scale_x_continuous(breaks = 1:5) +
+    labs(x = NULL, y = "Δ (post − pre)") +
+    theme(legend.position = "none",
+          strip.text = element_text(size = 9))
+}
+
+p_psych  <- trajectory_layer(overview_psych)
+p_physio <- trajectory_layer(overview_physio) + labs(x = "Session")
+
+(p_psych / p_physio) +
+  plot_layout(heights = c(1, 1)) +
+  plot_annotation(
+    caption = "Thin coloured lines = individual participant trajectories. Thick black line = cross-participant mean Δ at each session."
+  )
+```
+
 ## Main result — benefit per session, and its stability
 
 ```{r}
@@ -60,54 +114,117 @@ ggplot() +
 
 ## Significant findings
 
-Mixed-effects models with random participant intercepts (`lmerTest::lmer`), session centered at session 1 (`session_c = session − 1`) so the intercept = estimated Δ at session 1.
+### Within-session effects at session 1 (paired t-tests)
 
-**Within-session effects at session 1** (Model 1 intercept, Δ = post − pre):
+For each outcome we ran a **paired t-test** on the session-1 pre/post observations (n = participants with complete pre+post data at session 1). Δ = post − pre.
 
 ```{r}
-#| label: conference-psych-table
+#| label: conference-psych-ttest
 #| warning: false
 library(purrr)
 
-psych_table <- df_analysis %>%
+paired_t_summary <- function(d, label) {
+  pre  <- d$pre
+  post <- d$post
+  ok   <- complete.cases(pre, post)
+  pre  <- pre[ok]
+  post <- post[ok]
+  if (length(pre) < 2) {
+    return(tibble::tibble(
+      Outcome = label, n = length(pre),
+      `Mean Δ [95% CI]` = NA_character_,
+      `t` = NA_character_, `df` = NA_integer_, `p` = NA_character_
+    ))
+  }
+  tt <- t.test(post, pre, paired = TRUE)
+  tibble::tibble(
+    Outcome = label,
+    n = length(pre),
+    `Mean Δ [95% CI]` = sprintf("%+.2f [%+.2f, %+.2f]",
+                                 tt$estimate,
+                                 tt$conf.int[1], tt$conf.int[2]),
+    `t` = sprintf("%+.2f", tt$statistic),
+    `df` = as.integer(tt$parameter),
+    `p` = sprintf("%.3f", tt$p.value)
+  )
+}
+
+psych_session1 <- df_analysis %>%
+  filter(session_order == 1) %>%
+  select(participant, outcome, pre, post) %>%
   split(.$outcome) %>%
-  imap_dfr(function(d, nm) {
-    m <- lmerTest::lmer(delta ~ session_c + (1 | participant),
-                        data = d, REML = TRUE)
-    coefs <- broom.mixed::tidy(m, effects = "fixed", conf.int = TRUE,
-                               conf.method = "Wald")
-    intercept <- coefs %>% filter(term == "(Intercept)")
-    slope     <- coefs %>% filter(term == "session_c")
-    tibble::tibble(
-      Outcome = nm,
-      `Session-1 Δ [95% CI]` = sprintf("%+.2f [%+.2f, %+.2f]",
-                                        intercept$estimate,
-                                        intercept$conf.low,
-                                        intercept$conf.high),
-      `p` = sprintf("%.3f", intercept$p.value),
-      `Slope p` = sprintf("%.3f", slope$p.value)
-    )
-  }) %>%
+  imap_dfr(function(d, nm) paired_t_summary(d, nm)) %>%
   mutate(Outcome = factor(Outcome, levels = outcome_levels)) %>%
   arrange(Outcome) %>%
   mutate(Outcome = as.character(outcome_labels[as.character(Outcome)]))
 
-knitr::kable(psych_table,
-             caption = "Session-1 Δ = model intercept; slope p = test of change in Δ across sessions 1–5. All slope CIs straddle zero (no detectable fade).")
+knitr::kable(psych_session1,
+             caption = "Session-1 paired t-tests on Δ = post − pre, per outcome. Within-subject test across the participants who completed session 1.")
 ```
 
-**Stability across sessions** (Model 1 slope, change in Δ per session): all eight CIs comfortably straddled zero — **no outcome showed a detectable fade**. Model 2 (`timepoint × session` in the raw pre/post scale) agreed: interaction p-values ranged from .22 to .98 across outcomes.
+```{r}
+#| label: conference-physio-ttest
+#| warning: false
+physio_session1 <- df_physio %>%
+  filter(session_order == 1) %>%
+  transmute(participant,
+            hr_pre   = heartrate_pre,   hr_post   = heartrate_post,
+            sys_pre  = blood_pre_sys,   sys_post  = blood_post_sys,
+            dias_pre = blood_pre_dias,  dias_post = blood_post_dias)
 
-**VRSQ moderation** (Model 3, within-person deviation from participant's own VRSQ mean): no pre-registered primary moderator effect survived. The only CI excluding zero was a small positive within-person effect of **VRSQ oculomotor on vitality** (+0.07 per point, 95% CI [+0.002, +0.14], p = .045), i.e. participants reported slightly *more* vitality gain on their sicker-than-usual sessions — likely a chance finding given eight outcomes × three VRSQ moderators = 24 tests.
+physio_t_rows <- list(
+  list(label = "Heart rate (bpm)",      pre = "hr_pre",   post = "hr_post"),
+  list(label = "Systolic BP (mmHg)",    pre = "sys_pre",  post = "sys_post"),
+  list(label = "Diastolic BP (mmHg)",   pre = "dias_pre", post = "dias_post")
+) %>%
+  purrr::map_dfr(function(spec) {
+    d <- tibble::tibble(pre  = physio_session1[[spec$pre]],
+                        post = physio_session1[[spec$post]])
+    paired_t_summary(d, spec$label)
+  })
 
-## Physiological findings
+knitr::kable(physio_t_rows,
+             caption = "Session-1 paired t-tests on physiological Δ = post − pre. Negative Mean Δ = within-session down-regulation.")
+```
 
-Heart rate and blood pressure (systolic and diastolic) were measured pre and post each session. Δ = post − pre; negative values indicate within-session down-regulation.
+### Stability across sessions (linear mixed-model slopes)
+
+For each outcome, a random-intercept linear mixed model (`Δ ~ session_c + (1 | participant)`, `session_c = session − 1`) tests whether the within-session benefit *changes* across sessions 1–5. The **slope** is the estimated change in Δ per additional session.
 
 ```{r}
-#| label: conference-physio-figure
-#| fig-height: 3.5
-#| fig-width: 8
+#| label: conference-psych-slopes
+#| warning: false
+slope_table <- function(data, label_lookup, level_order) {
+  data %>%
+    split(.$outcome) %>%
+    imap_dfr(function(d, nm) {
+      m <- lmerTest::lmer(delta ~ session_c + (1 | participant),
+                          data = d, REML = TRUE)
+      coefs <- broom.mixed::tidy(m, effects = "fixed", conf.int = TRUE,
+                                 conf.method = "Wald")
+      slope <- coefs %>% filter(term == "session_c")
+      tibble::tibble(
+        Outcome = nm,
+        `Slope (Δ per session)` = sprintf("%+.2f", slope$estimate),
+        `Slope 95% CI` = sprintf("[%+.2f, %+.2f]",
+                                  slope$conf.low, slope$conf.high),
+        `Slope p` = sprintf("%.3f", slope$p.value)
+      )
+    }) %>%
+    mutate(Outcome = factor(Outcome, levels = level_order)) %>%
+    arrange(Outcome) %>%
+    mutate(Outcome = as.character(label_lookup[as.character(Outcome)]))
+}
+
+psych_slopes <- slope_table(df_analysis, outcome_labels, outcome_levels)
+
+knitr::kable(psych_slopes,
+             caption = "LMM slope on session_c (random-intercept model). Sign convention: for ROS and vitality, a positive slope = growing benefit; for TMD and the negative-affect scales, a negative slope = growing benefit.")
+```
+
+```{r}
+#| label: conference-physio-slopes
+#| warning: false
 df_physio_long <- df_physio %>%
   select(participant, session_order, hr_delta, sys_delta, dias_delta) %>%
   pivot_longer(cols = c(hr_delta, sys_delta, dias_delta),
@@ -118,6 +235,208 @@ df_physio_long <- df_physio %>%
                                      "Diastolic BP (mmHg)")),
          session_c = session_order - 1)
 
+physio_slopes_tbl <- df_physio_long %>%
+  split(.$measure) %>%
+  imap_dfr(function(d, nm) {
+    m <- lmerTest::lmer(delta ~ session_c + (1 | participant),
+                        data = d, REML = TRUE)
+    coefs <- broom.mixed::tidy(m, effects = "fixed", conf.int = TRUE,
+                               conf.method = "Wald")
+    slope <- coefs %>% filter(term == "session_c")
+    tibble::tibble(
+      Measure = nm,
+      `Slope (Δ per session)` = sprintf("%+.2f", slope$estimate),
+      `Slope 95% CI` = sprintf("[%+.2f, %+.2f]",
+                                slope$conf.low, slope$conf.high),
+      `Slope p` = sprintf("%.3f", slope$p.value)
+    )
+  })
+
+knitr::kable(physio_slopes_tbl,
+             caption = "Physiological LMM slope on session_c. A positive slope means the within-session reduction is attenuating across sessions; near-zero = stable.")
+```
+
+**Summary**: all psychological and physiological slope CIs comfortably straddled zero — **no outcome showed a detectable fade or growth**. Model 2 (`timepoint × session` in the raw pre/post scale, see `analysis.qmd`) agreed: interaction p-values ranged from .22 to .98 across psychological outcomes.
+
+### VRSQ moderation
+
+To keep the moderation readout simple, we re-expressed every outcome as **improvement** so that positive values always mean a more beneficial within-session change. For psychology this is the sign-flipped `Δ` already stored in `df_analysis$improvement`; for physiology it is `-Δ`, so a larger positive value means a larger down-regulation. Negative VRSQ slopes therefore mean **more sickness = less benefit**.
+
+At **session 1** we fit a simple linear model per outcome: `improvement ~ vrsq_total`. Across **all sessions** we fit a pooled random-intercept model per outcome: `improvement ~ session_c + vrsq_total_wc + vrsq_total_pm + (1 | participant)`, where `vrsq_total_wc` is the within-person deviation from the participant's own average VRSQ total.
+
+```{r}
+#| label: conference-vrsq-setup
+#| warning: false
+df_psych_vrsq <- df_analysis %>%
+  select(participant, session_order, session_c, outcome, improvement,
+         vrsq_total, vrsq_total_wc, vrsq_total_pm)
+
+df_physio_vrsq <- df_physio %>%
+  select(participant, session_order, hr_delta, sys_delta, dias_delta) %>%
+  pivot_longer(cols = c(hr_delta, sys_delta, dias_delta),
+               names_to = "measure", values_to = "delta") %>%
+  mutate(measure = factor(measure,
+                          levels = c("hr_delta", "sys_delta", "dias_delta"),
+                          labels = c("Heart rate (bpm)", "Systolic BP (mmHg)",
+                                     "Diastolic BP (mmHg)"))) %>%
+  left_join(df_ssq %>% select(participant, session_order, vrsq_total),
+            by = c("participant", "session_order")) %>%
+  group_by(participant) %>%
+  mutate(vrsq_total_pm = mean(vrsq_total, na.rm = TRUE),
+         vrsq_total_wc = vrsq_total - vrsq_total_pm) %>%
+  ungroup() %>%
+  mutate(session_c = session_order - 1,
+         improvement = -delta)
+
+extract_vrsq_session1 <- function(data, measure_col, measure_levels = NULL,
+                                  label_lookup = NULL) {
+  data %>%
+    filter(session_order == 1) %>%
+    split(.[[measure_col]]) %>%
+    purrr::imap_dfr(function(d, nm) {
+      d <- d %>% filter(complete.cases(improvement, vrsq_total))
+      if (nrow(d) < 3 || dplyr::n_distinct(d$vrsq_total) < 2) {
+        return(tibble::tibble(
+          Measure = nm,
+          n = nrow(d),
+          `Session-1 VRSQ slope` = NA_character_,
+          `95% CI` = NA_character_,
+          `p` = NA_character_
+        ))
+      }
+      m <- stats::lm(improvement ~ vrsq_total, data = d)
+      coefs <- summary(m)$coefficients
+      ci <- suppressMessages(confint(m, "vrsq_total"))
+      tibble::tibble(
+        Measure = nm,
+        n = nrow(d),
+        `Session-1 VRSQ slope` = sprintf("%+.3f", unname(coefs["vrsq_total", "Estimate"])),
+        `95% CI` = sprintf("[%+.3f, %+.3f]", ci[1], ci[2]),
+        `p` = sprintf("%.3f", unname(coefs["vrsq_total", "Pr(>|t|)"]))
+      )
+    }) %>%
+    {
+      if (!is.null(measure_levels)) {
+        mutate(., Measure = factor(Measure, levels = measure_levels))
+      } else {
+        .
+      }
+    } %>%
+    arrange(Measure) %>%
+    {
+      if (!is.null(label_lookup)) {
+        mutate(., Measure = as.character(label_lookup[as.character(Measure)]))
+      } else {
+        .
+      }
+    }
+}
+
+extract_vrsq_all_sessions <- function(data, measure_col, measure_levels = NULL,
+                                      label_lookup = NULL) {
+  data %>%
+    split(.[[measure_col]]) %>%
+    purrr::imap_dfr(function(d, nm) {
+      d <- d %>% filter(complete.cases(improvement, session_c,
+                                       vrsq_total_wc, vrsq_total_pm))
+      if (nrow(d) < 4 || dplyr::n_distinct(d$participant) < 2 ||
+          dplyr::n_distinct(d$vrsq_total_wc) < 2) {
+        return(tibble::tibble(
+          Measure = nm,
+          n = nrow(d),
+          `All-session VRSQ slope` = NA_character_,
+          `95% CI` = NA_character_,
+          `p` = NA_character_
+        ))
+      }
+      m <- lmerTest::lmer(improvement ~ session_c + vrsq_total_wc + vrsq_total_pm +
+                            (1 | participant),
+                          data = d, REML = TRUE)
+      coefs <- broom.mixed::tidy(m, effects = "fixed", conf.int = TRUE,
+                                 conf.method = "Wald")
+      vrsq_row <- coefs %>% filter(term == "vrsq_total_wc")
+      tibble::tibble(
+        Measure = nm,
+        n = nrow(d),
+        `All-session VRSQ slope` = sprintf("%+.3f", vrsq_row$estimate),
+        `95% CI` = sprintf("[%+.3f, %+.3f]", vrsq_row$conf.low, vrsq_row$conf.high),
+        `p` = sprintf("%.3f", vrsq_row$p.value)
+      )
+    }) %>%
+    {
+      if (!is.null(measure_levels)) {
+        mutate(., Measure = factor(Measure, levels = measure_levels))
+      } else {
+        .
+      }
+    } %>%
+    arrange(Measure) %>%
+    {
+      if (!is.null(label_lookup)) {
+        mutate(., Measure = as.character(label_lookup[as.character(Measure)]))
+      } else {
+        .
+      }
+    }
+}
+```
+
+```{r}
+#| label: conference-vrsq-psych-session1
+#| warning: false
+psych_vrsq_session1 <- extract_vrsq_session1(
+  df_psych_vrsq, "outcome", outcome_levels, outcome_labels)
+
+knitr::kable(
+  psych_vrsq_session1,
+  caption = "Session-1 simple VRSQ moderation for psychological outcomes. Outcome scale = improvement, so negative slopes mean higher VRSQ total was associated with less benefit in session 1."
+)
+```
+
+```{r}
+#| label: conference-vrsq-psych-all
+#| warning: false
+psych_vrsq_all <- extract_vrsq_all_sessions(
+  df_psych_vrsq, "outcome", outcome_levels, outcome_labels)
+
+knitr::kable(
+  psych_vrsq_all,
+  caption = "All-session pooled VRSQ moderation for psychological outcomes. Slope = within-person change in improvement per 1-point increase in VRSQ total above the participant's own mean. Negative slopes mean less benefit on sicker-than-usual sessions."
+)
+```
+
+```{r}
+#| label: conference-vrsq-physio-session1
+#| warning: false
+physio_vrsq_session1 <- extract_vrsq_session1(df_physio_vrsq, "measure")
+
+knitr::kable(
+  physio_vrsq_session1,
+  caption = "Session-1 simple VRSQ moderation for physiological outcomes. Improvement is coded so positive values mean larger down-regulation; negative slopes mean higher VRSQ total was associated with less physiological benefit in session 1."
+)
+```
+
+```{r}
+#| label: conference-vrsq-physio-all
+#| warning: false
+physio_vrsq_all <- extract_vrsq_all_sessions(df_physio_vrsq, "measure")
+
+knitr::kable(
+  physio_vrsq_all,
+  caption = "All-session pooled VRSQ moderation for physiological outcomes. Negative slopes mean less physiological down-regulation on sicker-than-usual sessions."
+)
+```
+
+Across the psychological outcomes, the session-1 and pooled all-session VRSQ-total slopes were small and their CIs all included zero. For physiology, the only CI excluding zero was a pooled negative association for **diastolic BP**, suggesting slightly less down-regulation on participants' sicker-than-usual sessions; with three physiological outcomes and a small sample, this should be treated as exploratory.
+
+## Physiological model fit
+
+Heart rate and blood pressure (systolic and diastolic) were measured pre and post each session. The figure below shows the LMM-predicted within-session Δ trajectory across sessions (purple line + 95% CI ribbon) overlaid on the observed Δs. Session-1 paired t-tests and LMM slopes for these measures are reported in the tables above.
+
+```{r}
+#| label: conference-physio-figure
+#| fig-height: 3.5
+#| fig-width: 8
 physio_pred <- df_physio_long %>%
   split(.$measure) %>%
   purrr::imap_dfr(function(d, nm) {
@@ -146,42 +465,15 @@ ggplot() +
   theme(strip.text = element_text(size = 9))
 ```
 
-```{r}
-#| label: conference-physio-table
-#| warning: false
-physio_table <- df_physio_long %>%
-  split(.$measure) %>%
-  imap_dfr(function(d, nm) {
-    m <- lmerTest::lmer(delta ~ session_c + (1 | participant),
-                        data = d, REML = TRUE)
-    coefs <- broom.mixed::tidy(m, effects = "fixed", conf.int = TRUE,
-                               conf.method = "Wald")
-    intercept <- coefs %>% filter(term == "(Intercept)")
-    slope     <- coefs %>% filter(term == "session_c")
-    tibble::tibble(
-      Measure = nm,
-      `Session-1 Δ [95% CI]` = sprintf("%+.2f [%+.2f, %+.2f]",
-                                        intercept$estimate,
-                                        intercept$conf.low,
-                                        intercept$conf.high),
-      `p` = sprintf("%.3f", intercept$p.value),
-      `Slope p` = sprintf("%.3f", slope$p.value)
-    )
-  })
-
-knitr::kable(physio_table,
-             caption = "Session-1 Δ = estimated within-session physiological change at session 1. Negative = down-regulation. Slope p = test of change across sessions.")
-```
-
 ## Draft conference abstract (~250 words)
 
 **Semilongitudinal VR-forest immersion: within-session improvements in restoration and mood persist across five repeated sessions**
 
 *Background.* Short exposures to natural environments are associated with improvements in affect and subjective restoration, and VR renderings of nature have been proposed as a scalable surrogate. Whether the within-session benefit persists with repeated exposure — or habituates — is not well characterised.
 
-*Methods.* Eleven adults completed five 10-minute immersions in a photorealistic virtual forest across consecutive sessions. Before and after each exposure we administered the Restoration Outcome Scale (ROS) and the POMS-SF (six mood subscales and Total Mood Disturbance, TMD). Physiological measures (heart rate, systolic and diastolic blood pressure) were recorded pre and post each session. Simulator sickness was measured after each session with the VRSQ. Within-session change (Δ = post − pre) was modelled per outcome using linear mixed-effects models with random participant intercepts (session centered at session 1, so the intercept estimates the effect at the first session). VRSQ was decomposed into within- and between-person components and entered as a session-level moderator.
+*Methods.* Eleven adults completed five 10-minute immersions in a photorealistic virtual forest across consecutive sessions. Before and after each exposure we administered the Restoration Outcome Scale (ROS) and the POMS-SF (six mood subscales and Total Mood Disturbance, TMD). Physiological measures (heart rate, systolic and diastolic blood pressure) were recorded pre and post each session. Simulator sickness was measured after each session with the VRSQ. Session-1 within-session effects (Δ = post − pre) were tested with paired t-tests per outcome. The change in Δ across sessions 1–5 was tested with linear mixed-effects models (`Δ ~ session + (1 | participant)`). As a simple moderation check, VRSQ total was tested against improvement at session 1 and in pooled mixed models across all sessions.
 
-*Results.* From the very first session, immersion produced reliable improvements in restoration (ROS Δ = +4.66, 95% CI [+1.71, +7.60], p = .006), Total Mood Disturbance (Δ = −7.35 [−11.19, −3.50], p = .002), and the tension, fatigue, anger, and depression subscales of POMS (all p < .05). The linear `session` slope was indistinguishable from zero for every outcome — that is, *the benefit did not detectably fade across the five sessions*. Physiological measures showed modest within-session reductions in heart rate and blood pressure at session 1, with stable trajectories across sessions. Within-person cybersickness did not attenuate the benefit on any primary outcome.
+*Results.* From the very first session, paired t-tests showed reliable within-subject improvements in restoration and mood (Total Mood Disturbance and the tension, fatigue, anger, and depression subscales of POMS). LMM slopes on session were indistinguishable from zero for every outcome (psychological and physiological) — that is, *the benefit did not detectably fade or grow across the five sessions*. Physiological measures showed modest within-session reductions in heart rate and blood pressure at session 1, with stable trajectories across sessions. Simple VRSQ-total moderation models were near-zero for the psychological outcomes; the only CI excluding zero was a pooled negative association with diastolic BP.
 
 *Conclusions.* A repeatable, short VR-forest protocol produced stable within-session restoration and mood benefits over five sessions without evidence of habituation, supporting its feasibility as a low-burden well-being intervention. Replication with a larger sample and an active control is the necessary next step.
 
@@ -190,5 +482,5 @@ knitr::kable(physio_table,
 - **n = 11** analytical sample (one enrolled participant had incomplete pre/post data). Effect sizes are usable; CIs are wide.
 - **No control condition** — the within-session Δ cannot separate immersion-specific effects from mere-rest effects or questionnaire reactivity.
 - **Open-label, within-subject design** — expectancy effects plausibly inflate the observed improvements.
-- **Multiple outcomes** — the VRSQ-oculomotor × vitality association (p = .045) should not be interpreted as a real moderation without correction.
+- **Multiple outcomes** — the VRSQ moderation tables are exploratory across several outcomes and should be interpreted as pattern-descriptions rather than corrected confirmatory tests.
 - **Physiological measures** — small sample limits power for HR and BP; missing values may reduce coverage below 11 in some sessions.
