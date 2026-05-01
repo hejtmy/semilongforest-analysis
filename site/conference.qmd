@@ -225,16 +225,6 @@ knitr::kable(psych_slopes,
 ```{r}
 #| label: conference-physio-slopes
 #| warning: false
-df_physio_long <- df_physio %>%
-  select(participant, session_order, hr_delta, sys_delta, dias_delta) %>%
-  pivot_longer(cols = c(hr_delta, sys_delta, dias_delta),
-               names_to = "measure", values_to = "delta") %>%
-  mutate(measure = factor(measure,
-                          levels = c("hr_delta", "sys_delta", "dias_delta"),
-                          labels = c("Heart rate (bpm)", "Systolic BP (mmHg)",
-                                     "Diastolic BP (mmHg)")),
-         session_c = session_order - 1)
-
 physio_slopes_tbl <- df_physio_long %>%
   split(.$measure) %>%
   imap_dfr(function(d, nm) {
@@ -260,174 +250,108 @@ knitr::kable(physio_slopes_tbl,
 
 ### VRSQ moderation
 
-To keep the moderation readout simple, we re-expressed every outcome as **improvement** so that positive values always mean a more beneficial within-session change. For psychology this is the sign-flipped `Δ` already stored in `df_analysis$improvement`; for physiology it is `-Δ`, so a larger positive value means a larger down-regulation. Negative VRSQ slopes therefore mean **more sickness = less benefit**.
+We test whether VRSQ total moderates the within-session change Δ = post − pre, working in **each outcome's raw scale** (no sign-flipping). Two models per outcome:
 
-At **session 1** we fit a simple linear model per outcome: `improvement ~ vrsq_total`. Across **all sessions** we fit a pooled random-intercept model per outcome: `improvement ~ session_c + vrsq_total_wc + vrsq_total_pm + (1 | participant)`, where `vrsq_total_wc` is the within-person deviation from the participant's own average VRSQ total.
+- **Session 1** — simple linear model `Δ ~ vrsq_total`.
+- **All sessions** — random-intercept LMM `Δ ~ session_c + vrsq_total_wc + vrsq_total_pm + (1 | participant)`. The reported slope is on `vrsq_total_wc`, each participant's deviation from their own VRSQ-total mean.
+
+Slope reads in the outcome's natural direction:
+
+- ROS / vitality: positive Δ = better → **negative** slope = sicker → less benefit.
+- TMD / negative-affect scales: positive Δ = worse → **positive** slope = sicker → worse mood change.
+- HR / BP: negative Δ = down-regulation → **positive** slope = sicker → less down-regulation.
 
 ```{r}
-#| label: conference-vrsq-setup
+#| label: conference-vrsq-helpers
 #| warning: false
-df_psych_vrsq <- df_analysis %>%
-  select(participant, session_order, session_c, outcome, improvement,
-         vrsq_total, vrsq_total_wc, vrsq_total_pm)
+fmt_signed <- function(x)        ifelse(is.na(x),  "—", sprintf("%+.3f", x))
+fmt_ci     <- function(lo, hi)   ifelse(is.na(lo), "—", sprintf("[%+.3f, %+.3f]", lo, hi))
+fmt_p      <- function(x)        ifelse(is.na(x),  "—", sprintf("%.3f", x))
 
-df_physio_vrsq <- df_physio %>%
-  select(participant, session_order, hr_delta, sys_delta, dias_delta) %>%
-  pivot_longer(cols = c(hr_delta, sys_delta, dias_delta),
-               names_to = "measure", values_to = "delta") %>%
-  mutate(measure = factor(measure,
-                          levels = c("hr_delta", "sys_delta", "dias_delta"),
-                          labels = c("Heart rate (bpm)", "Systolic BP (mmHg)",
-                                     "Diastolic BP (mmHg)"))) %>%
-  left_join(df_ssq %>% select(participant, session_order, vrsq_total),
-            by = c("participant", "session_order")) %>%
-  group_by(participant) %>%
-  mutate(vrsq_total_pm = mean(vrsq_total, na.rm = TRUE),
-         vrsq_total_wc = vrsq_total - vrsq_total_pm) %>%
-  ungroup() %>%
-  mutate(session_c = session_order - 1,
-         improvement = -delta)
+empty_slope <- function(n) tibble::tibble(
+  n = n, estimate = NA_real_, conf.low = NA_real_,
+  conf.high = NA_real_, p.value = NA_real_)
 
-extract_vrsq_session1 <- function(data, measure_col, measure_levels = NULL,
-                                  label_lookup = NULL) {
-  data %>%
-    filter(session_order == 1) %>%
-    split(.[[measure_col]]) %>%
-    purrr::imap_dfr(function(d, nm) {
-      d <- d %>% filter(complete.cases(improvement, vrsq_total))
-      if (nrow(d) < 3 || dplyr::n_distinct(d$vrsq_total) < 2) {
-        return(tibble::tibble(
-          Measure = nm,
-          n = nrow(d),
-          `Session-1 VRSQ slope` = NA_character_,
-          `95% CI` = NA_character_,
-          `p` = NA_character_
-        ))
-      }
-      m <- stats::lm(improvement ~ vrsq_total, data = d)
-      coefs <- summary(m)$coefficients
-      ci <- suppressMessages(confint(m, "vrsq_total"))
-      tibble::tibble(
-        Measure = nm,
-        n = nrow(d),
-        `Session-1 VRSQ slope` = sprintf("%+.3f", unname(coefs["vrsq_total", "Estimate"])),
-        `95% CI` = sprintf("[%+.3f, %+.3f]", ci[1], ci[2]),
-        `p` = sprintf("%.3f", unname(coefs["vrsq_total", "Pr(>|t|)"]))
-      )
-    }) %>%
-    {
-      if (!is.null(measure_levels)) {
-        mutate(., Measure = factor(Measure, levels = measure_levels))
-      } else {
-        .
-      }
-    } %>%
-    arrange(Measure) %>%
-    {
-      if (!is.null(label_lookup)) {
-        mutate(., Measure = as.character(label_lookup[as.character(Measure)]))
-      } else {
-        .
-      }
-    }
+# Fit one VRSQ model on raw Δ for a single outcome's data and return its slope row.
+vrsq_slope <- function(d, scope = c("session1", "all")) {
+  scope <- match.arg(scope)
+  if (scope == "session1") {
+    d <- d %>% filter(session_order == 1, complete.cases(delta, vrsq_total))
+    if (nrow(d) < 3 || dplyr::n_distinct(d$vrsq_total) < 2)
+      return(empty_slope(nrow(d)))
+    fit <- stats::lm(delta ~ vrsq_total, data = d)
+    row <- broom::tidy(fit, conf.int = TRUE) %>% filter(term == "vrsq_total")
+  } else {
+    d <- d %>% filter(complete.cases(delta, session_c,
+                                     vrsq_total_wc, vrsq_total_pm))
+    if (nrow(d) < 4 || dplyr::n_distinct(d$participant) < 2 ||
+        dplyr::n_distinct(d$vrsq_total_wc) < 2)
+      return(empty_slope(nrow(d)))
+    fit <- lmerTest::lmer(
+      delta ~ session_c + vrsq_total_wc + vrsq_total_pm + (1 | participant),
+      data = d, REML = TRUE)
+    row <- broom.mixed::tidy(fit, effects = "fixed", conf.int = TRUE,
+                             conf.method = "Wald") %>%
+      filter(term == "vrsq_total_wc")
+  }
+  tibble::tibble(n = nrow(d), estimate = row$estimate,
+                 conf.low = row$conf.low, conf.high = row$conf.high,
+                 p.value = row$p.value)
 }
 
-extract_vrsq_all_sessions <- function(data, measure_col, measure_levels = NULL,
-                                      label_lookup = NULL) {
+# Build a per-outcome slope table, ordered by `levels` and labelled via `labels`
+# (when `labels` is NULL the measure value is used directly as the display label).
+vrsq_table <- function(data, scope, levels, labels = NULL) {
   data %>%
-    split(.[[measure_col]]) %>%
-    purrr::imap_dfr(function(d, nm) {
-      d <- d %>% filter(complete.cases(improvement, session_c,
-                                       vrsq_total_wc, vrsq_total_pm))
-      if (nrow(d) < 4 || dplyr::n_distinct(d$participant) < 2 ||
-          dplyr::n_distinct(d$vrsq_total_wc) < 2) {
-        return(tibble::tibble(
-          Measure = nm,
-          n = nrow(d),
-          `All-session VRSQ slope` = NA_character_,
-          `95% CI` = NA_character_,
-          `p` = NA_character_
-        ))
-      }
-      m <- lmerTest::lmer(improvement ~ session_c + vrsq_total_wc + vrsq_total_pm +
-                            (1 | participant),
-                          data = d, REML = TRUE)
-      coefs <- broom.mixed::tidy(m, effects = "fixed", conf.int = TRUE,
-                                 conf.method = "Wald")
-      vrsq_row <- coefs %>% filter(term == "vrsq_total_wc")
-      tibble::tibble(
-        Measure = nm,
-        n = nrow(d),
-        `All-session VRSQ slope` = sprintf("%+.3f", vrsq_row$estimate),
-        `95% CI` = sprintf("[%+.3f, %+.3f]", vrsq_row$conf.low, vrsq_row$conf.high),
-        `p` = sprintf("%.3f", vrsq_row$p.value)
-      )
-    }) %>%
-    {
-      if (!is.null(measure_levels)) {
-        mutate(., Measure = factor(Measure, levels = measure_levels))
-      } else {
-        .
-      }
-    } %>%
-    arrange(Measure) %>%
-    {
-      if (!is.null(label_lookup)) {
-        mutate(., Measure = as.character(label_lookup[as.character(Measure)]))
-      } else {
-        .
-      }
-    }
+    split(.$measure) %>%
+    purrr::imap_dfr(~ tibble::tibble(measure = .y) %>%
+                       bind_cols(vrsq_slope(.x, scope))) %>%
+    mutate(measure = factor(measure, levels = levels)) %>%
+    arrange(measure) %>%
+    transmute(
+      Outcome = if (is.null(labels)) as.character(measure)
+                else unname(labels[as.character(measure)]),
+      n = n,
+      `VRSQ slope (raw Δ per +1 VRSQ point)` = fmt_signed(estimate),
+      `95% CI` = fmt_ci(conf.low, conf.high),
+      `p` = fmt_p(p.value)
+    )
 }
 ```
 
 ```{r}
 #| label: conference-vrsq-psych-session1
 #| warning: false
-psych_vrsq_session1 <- extract_vrsq_session1(
-  df_psych_vrsq, "outcome", outcome_levels, outcome_labels)
-
-knitr::kable(
-  psych_vrsq_session1,
-  caption = "Session-1 simple VRSQ moderation for psychological outcomes. Outcome scale = improvement, so negative slopes mean higher VRSQ total was associated with less benefit in session 1."
-)
+df_vrsq %>% filter(domain == "psych") %>%
+  vrsq_table("session1", outcome_levels, outcome_labels) %>%
+  knitr::kable(caption = "Session-1 VRSQ moderation, psychological outcomes. Slope = change in raw Δ (post − pre, in the outcome's own scale) per +1 VRSQ-total point.")
 ```
 
 ```{r}
 #| label: conference-vrsq-psych-all
 #| warning: false
-psych_vrsq_all <- extract_vrsq_all_sessions(
-  df_psych_vrsq, "outcome", outcome_levels, outcome_labels)
-
-knitr::kable(
-  psych_vrsq_all,
-  caption = "All-session pooled VRSQ moderation for psychological outcomes. Slope = within-person change in improvement per 1-point increase in VRSQ total above the participant's own mean. Negative slopes mean less benefit on sicker-than-usual sessions."
-)
+df_vrsq %>% filter(domain == "psych") %>%
+  vrsq_table("all", outcome_levels, outcome_labels) %>%
+  knitr::kable(caption = "All-session pooled VRSQ moderation, psychological outcomes. Slope = within-person change in raw Δ per +1 VRSQ-total point above the participant's own mean.")
 ```
 
 ```{r}
 #| label: conference-vrsq-physio-session1
 #| warning: false
-physio_vrsq_session1 <- extract_vrsq_session1(df_physio_vrsq, "measure")
-
-knitr::kable(
-  physio_vrsq_session1,
-  caption = "Session-1 simple VRSQ moderation for physiological outcomes. Improvement is coded so positive values mean larger down-regulation; negative slopes mean higher VRSQ total was associated with less physiological benefit in session 1."
-)
+df_vrsq %>% filter(domain == "physio") %>%
+  vrsq_table("session1", physio_labels) %>%
+  knitr::kable(caption = "Session-1 VRSQ moderation, physiological outcomes. Δ < 0 = within-session down-regulation; positive slope = sicker → less down-regulation.")
 ```
 
 ```{r}
 #| label: conference-vrsq-physio-all
 #| warning: false
-physio_vrsq_all <- extract_vrsq_all_sessions(df_physio_vrsq, "measure")
-
-knitr::kable(
-  physio_vrsq_all,
-  caption = "All-session pooled VRSQ moderation for physiological outcomes. Negative slopes mean less physiological down-regulation on sicker-than-usual sessions."
-)
+df_vrsq %>% filter(domain == "physio") %>%
+  vrsq_table("all", physio_labels) %>%
+  knitr::kable(caption = "All-session pooled VRSQ moderation, physiological outcomes. Positive slope = on participants' sicker-than-usual sessions, the within-session reduction in HR/BP was smaller.")
 ```
 
-Across the psychological outcomes, the session-1 and pooled all-session VRSQ-total slopes were small and their CIs all included zero. For physiology, the only CI excluding zero was a pooled negative association for **diastolic BP**, suggesting slightly less down-regulation on participants' sicker-than-usual sessions; with three physiological outcomes and a small sample, this should be treated as exploratory.
+Across the psychological outcomes, both the session-1 and pooled all-session VRSQ slopes were small and their CIs all included zero. For physiology, the only CI excluding zero was a positive pooled slope for **diastolic BP** — i.e. slightly less within-session down-regulation on participants' sicker-than-usual sessions. With three physiological outcomes and a small sample, this should be treated as exploratory.
 
 ## Physiological model fit
 

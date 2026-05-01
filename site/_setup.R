@@ -106,4 +106,38 @@ df_physio <- load_physio_data() %>%
   mutate(session_order = as.integer(session_order),
          session_c = session_order - 1)
 
+# Physiological deltas in long form — one row per participant × session × measure.
+# Single source of truth for the human-readable measure labels.
+physio_labels <- c("Heart rate (bpm)", "Systolic BP (mmHg)", "Diastolic BP (mmHg)")
+
+df_physio_long <- df_physio %>%
+  select(participant, session_order, session_c,
+         hr_delta, sys_delta, dias_delta) %>%
+  pivot_longer(c(hr_delta, sys_delta, dias_delta),
+               names_to = "measure", values_to = "delta") %>%
+  mutate(measure = factor(measure,
+                          levels = c("hr_delta", "sys_delta", "dias_delta"),
+                          labels = physio_labels))
+
+# Combined long frame for VRSQ moderation across psychological + physiological
+# outcomes, in each outcome's raw Δ = post − pre scale (no sign-flipping).
+df_vrsq <- bind_rows(
+  df_analysis %>%
+    transmute(domain = "psych",
+              measure = as.character(outcome),
+              participant, session_order, session_c, delta,
+              vrsq_total, vrsq_total_wc, vrsq_total_pm),
+  df_physio_long %>%
+    left_join(df_ssq %>% select(participant, session_order, vrsq_total),
+              by = c("participant", "session_order")) %>%
+    group_by(participant) %>%
+    mutate(vrsq_total_pm = mean(vrsq_total, na.rm = TRUE),
+           vrsq_total_wc = vrsq_total - vrsq_total_pm) %>%
+    ungroup() %>%
+    transmute(domain = "physio",
+              measure = as.character(measure),
+              participant, session_order, session_c, delta,
+              vrsq_total, vrsq_total_wc, vrsq_total_pm)
+)
+
 theme_set(theme_minimal(base_size = 12))
