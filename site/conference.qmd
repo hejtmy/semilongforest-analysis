@@ -114,38 +114,65 @@ ggplot() +
 
 ## Significant findings
 
-### Within-session effects at session 1 (paired t-tests)
+### Within-session effects at session 1 (paired tests)
 
-For each outcome we ran a **paired t-test** on the session-1 pre/post observations (n = participants with complete pre+post data at session 1). Δ = post − pre.
+For each outcome we tested the session-1 pre/post observations (n = participants with complete pre+post data at session 1). Δ = post − pre.
+
+Because the analytical sample is small, we did **not** assume normality. For every outcome we first checked the normality of the within-pair differences (post − pre) with a **Shapiro–Wilk test**, and we report both a **paired t-test** and its non-parametric counterpart, the **Wilcoxon signed-rank test** (the within-subject analogue of the Mann–Whitney U test, appropriate here because pre and post are paired observations on the same participant). The *Recommended test* column flags the t-test when the differences are consistent with normality (Shapiro–Wilk *p* ≥ .05) and the Wilcoxon test otherwise; in practice the two agree on every outcome.
 
 ```{r}
 #| label: conference-psych-ttest
 #| warning: false
 library(purrr)
 
-paired_t_summary <- function(d, label) {
+# Session-1 within-session test for one outcome. Reports a normality check on the
+# within-pair differences (Shapiro–Wilk), the parametric paired t-test, and the
+# non-parametric Wilcoxon signed-rank test, and recommends one based on normality.
+paired_test_summary <- function(d, label) {
   pre  <- d$pre
   post <- d$post
   ok   <- complete.cases(pre, post)
   pre  <- pre[ok]
   post <- post[ok]
-  if (length(pre) < 2) {
+  n    <- length(pre)
+  if (n < 3) {
     return(tibble::tibble(
-      Outcome = label, n = length(pre),
+      Outcome = label, n = n,
       `Mean Δ [95% CI]` = NA_character_,
-      `t` = NA_character_, `df` = NA_integer_, `p` = NA_character_
+      `t (df), p` = NA_character_,
+      `Shapiro–Wilk p` = NA_character_,
+      `Wilcoxon V, p` = NA_character_,
+      `Recommended test` = NA_character_
     ))
   }
-  tt <- t.test(post, pre, paired = TRUE)
+  diff <- post - pre
+
+  # Normality of the within-pair differences. Shapiro–Wilk is undefined when all
+  # differences are identical (zero variance), so guard it.
+  sw_p <- if (stats::sd(diff) == 0) NA_real_
+          else tryCatch(stats::shapiro.test(diff)$p.value,
+                        error = function(e) NA_real_)
+
+  tt <- stats::t.test(post, pre, paired = TRUE)
+  wt <- tryCatch(
+    suppressWarnings(stats::wilcox.test(post, pre, paired = TRUE, exact = FALSE)),
+    error = function(e) NULL)
+
+  recommended <- if (is.na(sw_p)) "t-test"
+                 else if (sw_p >= 0.05) "t-test" else "Wilcoxon"
+
   tibble::tibble(
     Outcome = label,
-    n = length(pre),
+    n = n,
     `Mean Δ [95% CI]` = sprintf("%+.2f [%+.2f, %+.2f]",
                                  tt$estimate,
                                  tt$conf.int[1], tt$conf.int[2]),
-    `t` = sprintf("%+.2f", tt$statistic),
-    `df` = as.integer(tt$parameter),
-    `p` = sprintf("%.3f", tt$p.value)
+    `t (df), p` = sprintf("%+.2f (%d), %.3f",
+                          tt$statistic, as.integer(tt$parameter), tt$p.value),
+    `Shapiro–Wilk p` = if (is.na(sw_p)) "—" else sprintf("%.3f", sw_p),
+    `Wilcoxon V, p` = if (is.null(wt)) "—"
+                      else sprintf("%.1f, %.3f", wt$statistic, wt$p.value),
+    `Recommended test` = recommended
   )
 }
 
@@ -153,13 +180,13 @@ psych_session1 <- df_analysis %>%
   filter(session_order == 1) %>%
   select(participant, outcome, pre, post) %>%
   split(.$outcome) %>%
-  imap_dfr(function(d, nm) paired_t_summary(d, nm)) %>%
+  imap_dfr(function(d, nm) paired_test_summary(d, nm)) %>%
   mutate(Outcome = factor(Outcome, levels = outcome_levels)) %>%
   arrange(Outcome) %>%
   mutate(Outcome = as.character(outcome_labels[as.character(Outcome)]))
 
 knitr::kable(psych_session1,
-             caption = "Session-1 paired t-tests on Δ = post − pre, per outcome. Within-subject test across the participants who completed session 1.")
+             caption = "Session-1 within-session tests on Δ = post − pre, per outcome. Shapiro–Wilk tests the normality of the within-pair differences; the paired t-test and the Wilcoxon signed-rank test are both reported, with the recommended test flagged by the Shapiro–Wilk result.")
 ```
 
 ```{r}
@@ -180,11 +207,11 @@ physio_t_rows <- list(
   purrr::map_dfr(function(spec) {
     d <- tibble::tibble(pre  = physio_session1[[spec$pre]],
                         post = physio_session1[[spec$post]])
-    paired_t_summary(d, spec$label)
+    paired_test_summary(d, spec$label)
   })
 
 knitr::kable(physio_t_rows,
-             caption = "Session-1 paired t-tests on physiological Δ = post − pre. Negative Mean Δ = within-session down-regulation.")
+             caption = "Session-1 within-session tests on physiological Δ = post − pre. Shapiro–Wilk checks normality of the within-pair differences; both the paired t-test and the Wilcoxon signed-rank test are reported. Negative Mean Δ = within-session down-regulation.")
 ```
 
 ### Stability across sessions (linear mixed-model slopes)
@@ -395,7 +422,7 @@ ggplot() +
 
 *Background.* Short exposures to natural environments are associated with improvements in affect and subjective restoration, and VR renderings of nature have been proposed as a scalable surrogate. Whether the within-session benefit persists with repeated exposure — or habituates — is not well characterised.
 
-*Methods.* Eleven adults completed five 10-minute immersions in a photorealistic virtual forest across consecutive sessions. Before and after each exposure we administered the Restoration Outcome Scale (ROS) and the POMS-SF (six mood subscales and Total Mood Disturbance, TMD). Physiological measures (heart rate, systolic and diastolic blood pressure) were recorded pre and post each session. Simulator sickness was measured after each session with the VRSQ. Session-1 within-session effects (Δ = post − pre) were tested with paired t-tests per outcome. The change in Δ across sessions 1–5 was tested with linear mixed-effects models (`Δ ~ session + (1 | participant)`). As a simple moderation check, VRSQ total was tested against improvement at session 1 and in pooled mixed models across all sessions.
+*Methods.* Eleven adults completed five 10-minute immersions in a photorealistic virtual forest across consecutive sessions. Before and after each exposure we administered the Restoration Outcome Scale (ROS) and the POMS-SF (six mood subscales and Total Mood Disturbance, TMD). Physiological measures (heart rate, systolic and diastolic blood pressure) were recorded pre and post each session. Simulator sickness was measured after each session with the VRSQ. Session-1 within-session effects (Δ = post − pre) were tested per outcome with paired t-tests; the normality of the within-pair differences was checked with Shapiro–Wilk tests and the parametric results were corroborated with Wilcoxon signed-rank tests. The change in Δ across sessions 1–5 was tested with linear mixed-effects models (`Δ ~ session + (1 | participant)`). As a simple moderation check, VRSQ total was tested against improvement at session 1 and in pooled mixed models across all sessions.
 
 *Results.* From the very first session, paired t-tests showed reliable within-subject improvements in restoration and mood (Total Mood Disturbance and the tension, fatigue, anger, and depression subscales of POMS). LMM slopes on session were indistinguishable from zero for every outcome (psychological and physiological) — that is, *the benefit did not detectably fade or grow across the five sessions*. Physiological measures showed modest within-session reductions in heart rate and blood pressure at session 1, with stable trajectories across sessions. Simple VRSQ-total moderation models were near-zero for the psychological outcomes; the only CI excluding zero was a pooled negative association with diastolic BP.
 

@@ -10,7 +10,6 @@ data <- organize_psychotron_data(raw)
 organized <- split_participant_email(data, drop_email = TRUE)
 surveys <- organized$surveys
 
-
 poms_1 <- surveys[["1-poms-sf-pre"]]
 poms_1$data
 ros_1 <- surveys[["1-ros-pre"]]
@@ -38,7 +37,6 @@ df_ros %>%
   geom_point() +
   geom_line()
 
-# 
 df_poms %>%
   pivot_wider(names_from = timepoint, values_from = score) %>%
   mutate(change = post - pre) %>%
