@@ -1,0 +1,544 @@
+---
+title: "Conference presentation"
+subtitle: "ICDVRAT 2026, Copenhagen — talk plan, slide figures, and Q&A backup"
+---
+
+```{r}
+#| label: setup
+source("site/_setup.R")
+
+# The SSQ frame still carries a test account; every other frame is already
+# limited to the 11 analysed participants.
+analysed <- unique(df_analysis$participant)
+df_ssq_a <- df_ssq %>%
+  filter(participant %in% analysed) %>%
+  mutate(session_c = session_order - 1)
+
+n_part <- dplyr::n_distinct(analysed)
+n_obs  <- nrow(dplyr::filter(df_analysis, outcome == "ROS"))
+
+fixed_effects <- function(formula, data, keep = NULL) {
+  fit <- lmerTest::lmer(formula, data = data, REML = TRUE)
+  out <- broom.mixed::tidy(fit, effects = "fixed",
+                           conf.int = TRUE, conf.method = "Wald") %>%
+    filter(term != "(Intercept)")
+  if (!is.null(keep)) out <- filter(out, term %in% keep)
+  out %>% select(term, estimate, conf.low, conf.high, p.value)
+}
+
+fmt <- function(d, digits = 2) {
+  d %>% mutate(across(where(is.numeric) & !matches("p.value"), ~ round(.x, digits)),
+               p.value = ifelse(p.value < .001, "<.001", sprintf("%.3f", p.value)))
+}
+
+# Long pre/post frame for the physiological measures
+physio_pp <- df_physio %>%
+  transmute(participant, session_order, session_c,
+            `Heart rate (bpm)_pre`      = heartrate_pre,
+            `Heart rate (bpm)_post`     = heartrate_post,
+            `Systolic BP (mmHg)_pre`    = blood_pre_sys,
+            `Systolic BP (mmHg)_post`   = blood_post_sys,
+            `Diastolic BP (mmHg)_pre`   = blood_pre_dias,
+            `Diastolic BP (mmHg)_post`  = blood_post_dias) %>%
+  pivot_longer(-c(participant, session_order, session_c),
+               names_to = c("measure", "timepoint"), names_sep = "_") %>%
+  filter(!is.na(value)) %>%
+  mutate(measure = factor(measure, levels = physio_labels),
+         timepoint = factor(timepoint, levels = c("pre", "post")))
+```
+
+This page collects everything needed for the conference talk: the slide-by-slide
+plan, the figures the slides use, and the supplementary analyses prepared for
+questions. All numbers are computed from the data at render time, so the page
+cannot drift away from the analysis.
+
+The sample is **`r n_part` participants** contributing **`r n_obs` sessions**
+(seven completed all five, three missed one session, one did not return after
+session 1).
+
+::: {.callout-note}
+## Turning this into slides
+The page is deliberately a document rather than a deck. To generate a Reveal.js
+deck from the same content, copy this file and set
+`format: revealjs` in the YAML header.
+:::
+
+# Talk plan
+
+Target: ~12 minutes plus questions.
+
+## 1. Title (0:15)
+
+*Repeated immersion in a virtual forest: stability of benefits across multiple
+sessions.* L. Hejtmánek, K. Rampová — Charles University, Institute of
+Psychology CAS, Czech University of Life Sciences.
+Background image: a screenshot of the virtual forest.
+
+## 2. Why virtual forests? (1:00)
+
+- Real forests reliably reduce stress and improve mood (Kotera et al., 2022).
+- Access is limited for many people, so VR nature has been proposed as a
+  substitute (Frost et al., 2022; Spano et al., 2023).
+- Single VR sessions work, but the effects are smaller than in real nature
+  (Hejtmánek et al., 2022; Reese et al., 2022).
+
+## 3. The gap: does the benefit last? (1:00)
+
+- Most evidence comes from **single sessions**, often between-subjects, with
+  exposures of five minutes or less (Bolouki, 2024).
+- An intervention is only useful if the benefit holds up under repeated use.
+- Two competing predictions (a two-arrow diagram works well here):
+  - **Novelty fades** — part of the effect comes from fascination with a new
+    place (Attention Restoration Theory), so the benefit shrinks with each visit.
+  - **Stable dose** — as with repeated outdoor walks (Browning et al., 2023),
+    the benefit stays the same each time.
+- **Research question:** with repeated visits to the same virtual forest, does
+  the within-session benefit stay stable, fade, or grow?
+
+## 4. The virtual forest (0:45)
+
+- Digital twin of a Central European oak-hornbeam forest.
+- Built from LiDAR scans of tree positions and dimensions, with spatial ambient
+  audio recorded on location.
+- The same environment as our 2022 study, where a 20-minute exposure produced
+  restoration gains.
+- Show a screenshot or a short video clip.
+
+## 5. Study design (1:15)
+
+- n = `r n_part` (8 women, 3 men, aged 20–25) from the university community;
+  12 enrolled, 1 dropped out after session 1.
+- **Five sessions, one per week** (Wednesdays), 10-minute immersion, about
+  30 minutes in total including measurements.
+- Meta Quest 3S, tethered; seated on a camping chair in a 4×4 m area, free to
+  stand and walk, as in forest bathing.
+- Show **Figure 1 from the paper** (session timeline).
+- Justify the 10 minutes: longer than typical VR-nature studies, shorter than
+  real forest bathing, and tolerable weekly.
+
+## 6. Measures and analysis (0:45)
+
+- Before and after each session: **ROS** (restoration), **POMS-SF** (six
+  subscales plus Total Mood Disturbance), **heart rate and blood pressure**
+  (OMRON Evolve).
+- After each session only: **VRSQ** (cybersickness).
+- Analysis on Δ = post − pre:
+  - Session 1: paired t-tests, checked against Wilcoxon tests (same conclusions).
+  - Stability: `Δ ~ session + (1 | participant)`; the **slope** is the change in
+    benefit per session.
+  - Moderation: VRSQ at session 1, and within-person VRSQ pooled across sessions.
+- One line on "exploratory, n = `r n_part`, effect sizes and CIs over p-values".
+
+## 7. Result 1 — the first session works (1:15)
+
+Show the forest plot below.
+
+```{r}
+#| label: presentation-session1-figure
+#| fig-height: 5
+#| fig-width: 8
+sess1 <- bind_rows(
+  df_analysis %>%
+    filter(session_order == 1) %>%
+    transmute(domain = "Psychological",
+              measure = outcome_labels[as.character(outcome)],
+              participant, delta, sign_improve),
+  df_physio_long %>%
+    filter(session_order == 1, !is.na(delta)) %>%
+    transmute(domain = "Physiological",
+              measure = as.character(measure),
+              participant, delta, sign_improve = -1)
+)
+
+paired_stats <- function(d) {
+  tt <- t.test(d$delta)
+  s  <- sd(d$delta)
+  sg <- d$sign_improve[1]
+  tibble(n = nrow(d),
+         mean = mean(d$delta), lo = tt$conf.int[1], hi = tt$conf.int[2],
+         p = tt$p.value,
+         dz = sg * mean(d$delta) / s,
+         dz_lo = sg * tt$conf.int[if (sg > 0) 1 else 2] / s,
+         dz_hi = sg * tt$conf.int[if (sg > 0) 2 else 1] / s)
+}
+
+sess1_stats <- sess1 %>%
+  group_by(domain, measure) %>%
+  group_modify(~ paired_stats(.x)) %>%
+  ungroup() %>%
+  mutate(domain = factor(domain, levels = c("Psychological", "Physiological")),
+         measure = stats::reorder(measure, dz))
+
+ggplot(sess1_stats, aes(x = dz, y = measure, colour = p < .05)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
+  geom_errorbarh(aes(xmin = dz_lo, xmax = dz_hi), height = 0.18,
+                 linewidth = 0.7) +
+  geom_point(size = 2.6) +
+  facet_grid(domain ~ ., scales = "free_y", space = "free_y") +
+  scale_colour_manual(values = c(`TRUE` = "#1b7837", `FALSE` = "grey55"),
+                      labels = c(`TRUE` = "p < .05", `FALSE` = "n.s."),
+                      name = NULL) +
+  labs(x = "Standardised within-session change at session 1 (dz)\npositive = improvement",
+       y = NULL,
+       caption = "Paired t-tests, 95% CIs. Signs are oriented so that positive always means benefit.") +
+  theme(legend.position = "top")
+```
+
+```{r}
+#| label: presentation-session1-table
+sess1_stats %>%
+  arrange(domain, desc(dz)) %>%
+  transmute(Domain = domain, Measure = measure, n,
+            `Δ (post − pre)` = round(mean, 2),
+            `95% CI` = sprintf("[%.2f, %.2f]", lo, hi),
+            dz = round(dz, 2),
+            p = ifelse(p < .001, "<.001", sprintf("%.3f", p))) %>%
+  kable(caption = "Session 1: within-session change in the raw units of each measure.")
+```
+
+Speaking points: mood disturbance, tension, fatigue, heart rate and systolic
+blood pressure all improved significantly; restoration moved the same way
+without reaching significance.
+
+## 8. Result 2 — the psychological benefit stays stable (1:30) — main slide
+
+- Show `conference-overview-figure-1.png` from the [conference summary](conference.qmd),
+  or only its top row (ROS and TMD) to keep it simple.
+- Every psychological slope had a confidence interval spanning zero
+  (TMD −0.07 per session [−0.85, +0.71]; ROS +0.89 [−0.33, +2.10]).
+- Say out loud: **"The fifth visit helped about as much as the first one."**
+- Point at the individual lines: participants differ from one another, but the
+  mean line stays flat.
+
+## 9. Result 3 — the heart-rate benefit weakens (1:00)
+
+- Show `conference-physio-figure-1.png`.
+- Heart-rate Δ slope **+1.37 bpm per session** [+0.24, +2.51], p = .019: the
+  reduction shrank across the study.
+- Systolic (+1.37, p = .170) and diastolic (+0.20, p = .687) went the same way
+  without reaching significance.
+- Then move straight to slide 10, which rules out the obvious explanations.
+
+## 10. Why does heart rate fade? (1:15) — new slide
+
+Three easy explanations, and none of them holds (details in
+[What explains the heart-rate attenuation?](#what-explains-the-heart-rate-attenuation)):
+
+1. **"Participants simply arrived calmer."** Pre-session heart rate did not
+   decline (+0.81 bpm per session, p = .412). What rose was the **post-session**
+   value (+2.21, p = .017).
+2. **"It is a floor effect on baseline."** Adjusting for each participant's
+   baseline heart rate makes the attenuation slightly *stronger*
+   (+1.37 → +1.58 bpm per session, p = .002).
+3. **"They got less anxious over the weeks."** Pre-session tension did not
+   change reliably (−0.20 per session, p = .127), nor did TMD (p = .483).
+
+What *did* drift down was **pre-session blood pressure** (systolic −2.32 mmHg
+per session, p = .029; diastolic −1.41, p = .005) and **pre-session fatigue**
+(−0.64, p = .010) — consistent with getting used to the lab, but the
+within-session BP benefit itself stayed flat.
+
+Honest framing for this slide: the heart-rate attenuation is the one finding
+that depends on the model specification (see the caveat below), so present it as
+a signal worth following up, not as an established effect.
+
+## 11. Result 4 — cybersickness did not reduce the benefit (0:45)
+
+- Cybersickness was **mild**: median VRSQ total
+  `r round(median(df_ssq_a$vrsq_total), 1)`,
+  `r round(100 * mean(df_ssq_a$vrsq_total < 10))`% of sessions below 10, and it
+  was highest at session 1.
+- No moderation of any psychological outcome, at session 1 or pooled
+  (e.g. ROS pooled β = −0.02 [−0.37, +0.33]).
+- The one exception was **diastolic BP pooled**: β = +0.31 [+0.05, +0.57],
+  p = .022 — a smaller BP reduction in sessions where someone felt sicker than
+  usual. Present as exploratory: many tests, small sample.
+
+## 12. Take-home and limitations (1:30)
+
+**Take-home**
+
+1. Short, repeated VR-forest exposure gave **psychological benefits that did not
+   fade** across five weeks.
+2. The **heart-rate benefit may weaken**, and this is not explained by calmer
+   arrivals, baseline levels, or cybersickness.
+3. Stable benefits make it less likely that the average effect is **only a
+   novelty response**.
+4. Cybersickness did not reduce the psychological benefit.
+
+**Limitations** — name them before the audience does.
+
+- n = `r n_part`, so small attenuation effects could be missed.
+- No control condition, so the change cannot be separated from rest or
+  expectancy.
+- Only a weekly schedule; denser or sparser spacing is untested.
+- Next step: larger sample, a control condition (resting or a non-nature VR
+  scene), and a longer follow-up.
+
+## 13. Thank you / Questions
+
+Contact: lukas.hejtmanek@fhs.cuni.cz. Funding: Cooperatio (PSYC) and the
+Johannes Amos Comenius Program (CZ.02.01.01/00/23_025/0008715). Optional QR code
+to the paper or this site.
+
+# What explains the heart-rate attenuation?
+
+These models were run to answer the obvious question from the audience: is the
+fading heart-rate benefit just participants becoming less anxious as the study
+went on? They model the **raw pre- and post-session values** against session,
+instead of only their difference.
+
+## Pre- and post-session values across sessions
+
+```{r}
+#| label: presentation-prepost-figure
+#| fig-height: 3.6
+#| fig-width: 9
+physio_pp %>%
+  group_by(measure, timepoint, session_order) %>%
+  summarise(m = mean(value),
+            se = sd(value) / sqrt(n()),
+            .groups = "drop") %>%
+  ggplot(aes(session_order, m, colour = timepoint, fill = timepoint)) +
+  geom_ribbon(aes(ymin = m - se, ymax = m + se), alpha = 0.15, colour = NA) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.2) +
+  facet_wrap(~ measure, scales = "free_y") +
+  scale_x_continuous(breaks = 1:5) +
+  scale_colour_manual(values = c(pre = "#762a83", post = "#1b7837"), name = NULL) +
+  scale_fill_manual(values = c(pre = "#762a83", post = "#1b7837"), guide = "none") +
+  labs(x = "Session", y = NULL,
+       caption = "Means across participants; ribbons are ±1 SE. The gap between the lines is the within-session benefit.") +
+  theme(legend.position = "top")
+```
+
+```{r}
+#| label: presentation-prepost-table
+tidyr::expand_grid(m = physio_labels, tp = c("pre", "post")) %>%
+  purrr::pmap_dfr(function(m, tp) {
+    fixed_effects(value ~ session_c + (1 | participant),
+                  dplyr::filter(physio_pp, measure == m, timepoint == tp)) %>%
+      mutate(Measure = m, Timepoint = tp)
+  }) %>%
+  transmute(Measure, Timepoint,
+            `Slope per session` = round(estimate, 2),
+            `95% CI` = sprintf("[%.2f, %.2f]", conf.low, conf.high),
+            p = ifelse(p.value < .001, "<.001", sprintf("%.3f", p.value))) %>%
+  kable(caption = "Raw value ~ session + (1 | participant), fitted separately for the pre- and the post-session measurement.")
+```
+
+Heart rate before the session is flat; the post-session value is what climbs.
+Blood pressure is the opposite: both baselines fall across the study, which does
+look like habituation to the lab, but pre and post fall together, so the
+within-session benefit is unchanged.
+
+## Adjusting the heart-rate slope for baseline
+
+```{r}
+#| label: presentation-hr-adjusted
+hr_adj <- df_physio %>%
+  select(participant, session_c, hr_delta, pre = heartrate_pre) %>%
+  filter(!is.na(hr_delta), !is.na(pre)) %>%
+  group_by(participant) %>%
+  mutate(pre_pm = mean(pre), pre_wc = pre - pre_pm) %>%
+  ungroup()
+
+bind_rows(
+  fixed_effects(hr_delta ~ session_c + (1 | participant), hr_adj) %>%
+    mutate(model = "Unadjusted"),
+  fixed_effects(hr_delta ~ session_c + pre_wc + pre_pm + (1 | participant),
+                hr_adj) %>%
+    mutate(model = "Adjusted for baseline HR")
+) %>%
+  transmute(Model = model,
+            Term = recode(term,
+                          session_c = "Session",
+                          pre_wc = "Baseline HR (within-person)",
+                          pre_pm = "Baseline HR (person mean)"),
+            Estimate = round(estimate, 2),
+            `95% CI` = sprintf("[%.2f, %.2f]", conf.low, conf.high),
+            p = ifelse(p.value < .001, "<.001", sprintf("%.3f", p.value))) %>%
+  kable(caption = "Heart-rate Δ across sessions, before and after adjusting for baseline heart rate. The adjusted model has a singular fit (participant variance collapses to zero once baseline is in the model), so treat it as descriptive.")
+```
+
+Controlling for baseline strengthens the session slope rather than removing it,
+so a floor effect on arrival heart rate is not the explanation.
+
+## Pre-session psychological scores across sessions
+
+```{r}
+#| label: presentation-pre-psych
+c("tension", "tmd", "ROS", "fatigue", "vitality") %>%
+  purrr::map_dfr(function(o) {
+    fixed_effects(pre ~ session_c + (1 | participant),
+                  filter(df_analysis, outcome == o)) %>%
+      mutate(Outcome = unname(outcome_labels[o]))
+  }) %>%
+  transmute(Outcome,
+            `Slope per session` = round(estimate, 2),
+            `95% CI` = sprintf("[%.2f, %.2f]", conf.low, conf.high),
+            p = ifelse(p.value < .001, "<.001", sprintf("%.3f", p.value))) %>%
+  kable(caption = "Pre-session scores ~ session + (1 | participant). Participants did not arrive in a reliably calmer mood; they did arrive less fatigued.")
+```
+
+::: {.callout-warning}
+## Caveat to state if pressed
+The attenuation is specification-dependent. In the Δ model it is
++1.37 bpm per session (p = .019), but in the equivalent raw-scale model with a
+`timepoint × session` interaction it is +1.38 [−1.09, +3.85], p = .270 — the
+same estimate with twice the residual variance. The session means also bounce
+around (weeks 2 and 5 high, week 4 low), which hints at an uncontrolled
+influence such as time of day or the walk to the lab.
+:::
+
+# Cybersickness (VRSQ) in detail
+
+## How much sickness, and does it habituate?
+
+```{r}
+#| label: presentation-vrsq-figure
+#| fig-height: 3.8
+#| fig-width: 8
+df_ssq_a %>%
+  mutate(participant = as.factor(participant)) %>%
+  ggplot(aes(session_order, vrsq_total)) +
+  geom_line(aes(group = participant, colour = participant), alpha = 0.4) +
+  geom_point(aes(colour = participant), size = 1.3, alpha = 0.7) +
+  stat_summary(aes(group = 1), fun = mean, geom = "line",
+               colour = "black", linewidth = 1.4) +
+  stat_summary(aes(group = 1), fun = mean, geom = "point",
+               colour = "black", size = 2.6) +
+  scale_x_continuous(breaks = 1:5) +
+  labs(x = "Session", y = "VRSQ total",
+       caption = "Thin lines = participants, thick black line = mean.") +
+  theme(legend.position = "none")
+```
+
+```{r}
+#| label: presentation-vrsq-descriptives
+df_ssq_a %>%
+  group_by(Session = session_order) %>%
+  summarise(n = n(),
+            Oculomotor = sprintf("%.1f (%.1f)", mean(vrsq_oculomotor), sd(vrsq_oculomotor)),
+            Disorientation = sprintf("%.1f (%.1f)", mean(vrsq_disorientation), sd(vrsq_disorientation)),
+            Total = sprintf("%.1f (%.1f)", mean(vrsq_total), sd(vrsq_total)),
+            Max = round(max(vrsq_total), 1),
+            .groups = "drop") %>%
+  kable(caption = "VRSQ per session, mean (SD).")
+```
+
+```{r}
+#| label: presentation-vrsq-slopes
+list(vrsq_total = "VRSQ total",
+     vrsq_oculomotor = "Oculomotor",
+     vrsq_disorientation = "Disorientation") %>%
+  purrr::imap_dfr(function(label, var) {
+    fixed_effects(as.formula(paste(var, "~ session_c + (1 | participant)")),
+                  df_ssq_a) %>%
+      mutate(Scale = label)
+  }) %>%
+  transmute(Scale,
+            `Slope per session` = round(estimate, 2),
+            `95% CI` = sprintf("[%.2f, %.2f]", conf.low, conf.high),
+            p = ifelse(p.value < .001, "<.001", sprintf("%.3f", p.value))) %>%
+  kable(caption = "VRSQ ~ session + (1 | participant).")
+```
+
+Sickness was mild and trended downwards, but not reliably: session 1 was the
+worst session, and the slope's CI still includes zero. Oculomotor complaints
+consistently exceeded disorientation.
+
+## Sickness is mostly a person, not a session
+
+```{r}
+#| label: presentation-vrsq-icc
+icc_fit <- lmerTest::lmer(vrsq_total ~ 1 + (1 | participant), data = df_ssq_a)
+vc <- as.data.frame(lme4::VarCorr(icc_fit))
+icc <- vc$vcov[1] / sum(vc$vcov)
+
+df_ssq_a %>%
+  group_by(Participant = participant) %>%
+  summarise(Sessions = n(),
+            `Mean VRSQ` = round(mean(vrsq_total), 1),
+            Range = sprintf("%.1f – %.1f", min(vrsq_total), max(vrsq_total)),
+            .groups = "drop") %>%
+  arrange(desc(`Mean VRSQ`)) %>%
+  kable(caption = sprintf("Person means of VRSQ total. ICC = %.2f: about half the variance in cybersickness is stable between people rather than varying session to session.", icc))
+```
+
+## Does sickness track the heart-rate benefit?
+
+```{r}
+#| label: presentation-vrsq-hr
+vrsq_hr <- df_physio %>%
+  select(participant, session_order, session_c, hr_delta, pre = heartrate_pre) %>%
+  inner_join(select(df_ssq_a, participant, session_order, vrsq_total),
+             by = c("participant", "session_order")) %>%
+  filter(!is.na(hr_delta)) %>%
+  group_by(participant) %>%
+  mutate(v_pm = mean(vrsq_total), v_wc = vrsq_total - v_pm,
+         pre_pm = mean(pre), pre_wc = pre - pre_pm) %>%
+  ungroup()
+
+bind_rows(
+  fixed_effects(hr_delta ~ session_c + v_wc + v_pm + (1 | participant),
+                vrsq_hr) %>% mutate(model = "VRSQ only"),
+  fixed_effects(hr_delta ~ session_c + v_wc + v_pm + pre_wc + pre_pm +
+                  (1 | participant), vrsq_hr) %>%
+    mutate(model = "VRSQ + baseline HR")
+) %>%
+  transmute(Model = model,
+            Term = recode(term,
+                          session_c = "Session",
+                          v_wc = "VRSQ (within-person)",
+                          v_pm = "VRSQ (person mean)",
+                          pre_wc = "Baseline HR (within-person)",
+                          pre_pm = "Baseline HR (person mean)"),
+            Estimate = round(estimate, 2),
+            `95% CI` = sprintf("[%.2f, %.2f]", conf.low, conf.high),
+            p = ifelse(p.value < .001, "<.001", sprintf("%.3f", p.value))) %>%
+  kable(caption = "Heart-rate Δ predicted by cybersickness. Both models have singular fits and are descriptive only.")
+```
+
+```{r}
+#| label: presentation-vrsq-hr-confound
+pm <- distinct(vrsq_hr, participant, v_pm, pre_pm)
+ct <- cor.test(pm$v_pm, pm$pre_pm)
+```
+
+There is an apparent between-person effect — participants who generally felt
+sicker showed a smaller heart-rate reduction (+0.39 bpm per VRSQ point,
+p = .003) — but it is confounded with baseline heart rate: person-mean VRSQ and
+person-mean baseline heart rate correlate at
+r = `r round(ct$estimate, 2)` (p = `r sprintf("%.3f", ct$p.value)`, n = `r nrow(pm)`),
+and adding baseline to the model shrinks the VRSQ coefficient by a third and
+removes its significance. Do not present this as a finding; it is only worth having ready if
+someone asks whether sicker participants benefited less.
+
+Crucially, the session slope survives every one of these adjustments
+(+1.37 unadjusted, +1.23 to +1.58 across the models above), so neither
+habituation to sickness nor baseline differences account for the fading
+heart-rate benefit.
+
+# Q&A preparation
+
+| Likely question | Prepared answer |
+|---|---|
+| "Isn't this just the effect of sitting down for 10 minutes?" | Concede there is no control condition; point to the 2022 real-versus-virtual comparison and name it as the next study. |
+| "Why does heart rate fade but mood doesn't?" | Slide 10: participants did not arrive calmer, baseline adjustment strengthens the effect, and sickness does not explain it. Add that the raw-scale specification is not significant. |
+| "Did participants just get less anxious over the study?" | Pre-session tension −0.20 per session (p = .127) and TMD (p = .483) are flat; pre-session HR is flat. Blood pressure baselines *did* fall, and the BP benefit stayed constant. |
+| "Was the sample powered to detect fading?" | No. Give CI widths: TMD could fade by up to about 0.85 points per session and we could not tell. |
+| "Did cybersickness drive anyone out?" | Sickness was mild (median VRSQ `r round(median(df_ssq_a$vrsq_total), 1)`), worst at session 1, and the single dropout left after session 1. |
+| "Did participants get bored?" | No boredom or engagement measure — an acknowledged gap and planned for the next study. |
+
+# Backup slides
+
+- **B1** Session-1 table above (all 11 outcomes, with Wilcoxon checks from the
+  [conference summary](conference.qmd)).
+- **B2** Full LMM slope table, psychological and physiological.
+- **B3** VRSQ moderation tables (session 1 and pooled).
+- **B4** `conference-figure-1.png`: model-predicted trajectories with CIs for
+  every outcome.
+- **B5** Pre/post trajectory figure and the baseline-adjustment table above.
+- **B6** VRSQ figure, per-session descriptives and person means above.
+- **B7** Missing-session coverage from the [overview](index.qmd).

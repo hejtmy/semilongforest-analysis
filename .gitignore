@@ -5,3 +5,5 @@
 .Ruserdata
 
 temp/
+outputs
+.codex-*
